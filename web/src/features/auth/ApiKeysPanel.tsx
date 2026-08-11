@@ -16,9 +16,8 @@ const KEY_META: Record<KeyType, { label: string; description: string }> = {
 };
 
 function maskKey(key: string): string {
-  if (!key) return '—';
-  if (key.length <= 18) return key;
-  return `${key.slice(0, 10)}…${key.slice(-6)}`;
+  if (!key) return '';
+  return '•'.repeat(key.length);
 }
 
 async function copyText(value: string): Promise<boolean> {

@@ -4,9 +4,16 @@ import type { DatabaseAdapter } from '../adapter.js';
 export type AuthKeyType = 'upload' | 'download' | 'session';
 
 const ALL_TYPES: AuthKeyType[] = ['upload', 'download', 'session'];
+const KEY_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const KEY_LENGTH = 40;
 
-function generateKey(): string {
-  return randomBytes(32).toString('base64url');
+function generateKey(length = KEY_LENGTH): string {
+  const bytes = randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i++) {
+    out += KEY_ALPHABET[bytes[i]! % KEY_ALPHABET.length]!;
+  }
+  return out;
 }
 
 export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void> {

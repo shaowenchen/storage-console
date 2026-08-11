@@ -29,9 +29,13 @@ describe('authKeys', () => {
     const upload = await getAuthKey(db, 'upload');
     const download = await getAuthKey(db, 'download');
     const session = await getAuthKey(db, 'session');
-    expect(upload.length).toBeGreaterThan(20);
-    expect(download.length).toBeGreaterThan(20);
-    expect(session.length).toBeGreaterThan(20);
+    const alphanumeric = /^[A-Za-z0-9]+$/;
+    expect(upload).toMatch(alphanumeric);
+    expect(download).toMatch(alphanumeric);
+    expect(session).toMatch(alphanumeric);
+    expect(upload).toHaveLength(40);
+    expect(download).toHaveLength(40);
+    expect(session).toHaveLength(40);
     expect(new Set([upload, download, session]).size).toBe(3);
   });
 
