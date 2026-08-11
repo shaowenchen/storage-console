@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
+    "postinstall": "npm --prefix web install --include=dev --no-fund --no-audit",
     "dev": "tsx watch src/index.ts",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
@@ -12,6 +13,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "test": "vitest run",
     "build": "tsc && npm run web:build && rm -rf dist/public && mkdir -p dist/public && cp -R web/dist/. dist/public/",
     "start": "node dist/index.js"
   },
