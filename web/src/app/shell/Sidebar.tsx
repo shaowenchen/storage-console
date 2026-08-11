@@ -6,7 +6,11 @@ export function Sidebar() {
       <div className="app-brand">storage-console</div>
       <nav className="app-nav" aria-label="Primary">
         <div className="nav-section">
-          <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+          <NavLink
+            to="/"
+            end
+            className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+          >
             Storages
           </NavLink>
         </div>
