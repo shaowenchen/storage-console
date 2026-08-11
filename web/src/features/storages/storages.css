@@ -33,6 +33,40 @@
 .bucket-panel {
   border-left: 0;
   padding: var(--rail-padding);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+#bucket-list {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.bucket-panel-footer {
+  margin-top: auto;
+  padding-top: 0.55rem;
+  border-top: 1px solid var(--border-soft);
+}
+
+.bucket-profile-link {
+  display: flex;
+  align-items: center;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-control);
+  color: var(--text-main);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.bucket-profile-link:hover {
+  background: var(--bg-soft);
+  color: var(--text-link);
+}
+
+.bucket-profile-collapsed {
+  display: none;
 }
 
 .file-panel {
@@ -121,6 +155,32 @@
 .storage-layout.storage-list-collapsed .rail-menu-btn,
 .storage-layout.storage-list-collapsed .rail-action-menu {
   display: none !important;
+}
+
+.storage-layout.storage-list-collapsed .bucket-panel-footer {
+  padding-top: 0.45rem;
+  display: flex;
+  justify-content: center;
+}
+
+.storage-layout.storage-list-collapsed .bucket-profile-link {
+  width: var(--rail-toggle-size);
+  height: var(--rail-toggle-size);
+  padding: 0;
+  justify-content: center;
+  border: 1px solid var(--border-chip);
+  border-radius: var(--rail-toggle-radius);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  font-weight: 800;
+}
+
+.storage-layout.storage-list-collapsed .bucket-profile-label {
+  display: none;
+}
+
+.storage-layout.storage-list-collapsed .bucket-profile-collapsed {
+  display: inline;
 }
 
 .bucket-item {
