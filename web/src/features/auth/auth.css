@@ -1,0 +1,112 @@
+.auth-screen {
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  background:
+    radial-gradient(circle at top left, var(--bg-body-accent), transparent 42%),
+    linear-gradient(180deg, var(--bg-body-gradient-start), var(--bg-page));
+}
+
+.auth-panel {
+  width: min(24rem, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1.75rem;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  background: var(--bg-panel);
+  box-shadow: var(--shadow-card);
+}
+
+.auth-panel h1 {
+  font-size: 1.75rem;
+  color: var(--text-strong);
+}
+
+.auth-subtitle,
+.auth-footer {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+}
+
+.auth-panel label {
+  font-size: 0.85rem;
+  color: var(--text-label);
+}
+
+.auth-panel input {
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-main);
+  padding: 0.7rem 0.85rem;
+}
+
+.auth-panel button,
+.auth-modal button {
+  border: 0;
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  color: #fff;
+  padding: 0.7rem 1rem;
+  cursor: pointer;
+}
+
+.auth-panel button:disabled {
+  opacity: 0.7;
+  cursor: default;
+}
+
+.auth-error {
+  color: var(--color-danger);
+  font-size: 0.88rem;
+}
+
+.auth-footer a,
+.auth-panel a {
+  color: var(--text-link);
+}
+
+.auth-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: var(--bg-modal-overlay);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.auth-modal {
+  width: min(32rem, 100%);
+  background: var(--bg-modal);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  box-shadow: var(--shadow-popover);
+}
+
+.auth-keys {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.auth-key-line {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.auth-key-line code {
+  word-break: break-all;
+  background: var(--bg-chip);
+  border: 1px solid var(--border-chip);
+  border-radius: 0.5rem;
+  padding: 0.45rem 0.6rem;
+}

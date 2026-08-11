@@ -1,0 +1,180 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import './notice.css';
+
+type NoticeState = {
+  open: boolean;
+  title: string;
+  message: string;
+  variant: 'notice' | 'error';
+};
+
+type ConfirmState = {
+  open: boolean;
+  title: string;
+  message: string;
+};
+
+type NoticeContextValue = {
+  notify: (message: string, title?: string) => void;
+  notifyError: (message: string, title?: string) => void;
+  confirm: (message: string, title?: string) => Promise<boolean>;
+};
+
+const NoticeContext = createContext<NoticeContextValue | null>(null);
+
+const ERROR_NOTICE_COOLDOWN_MS = 30000;
+const recentErrorNotices = new Map<string, number>();
+
+let externalNotify: NoticeContextValue['notify'] | null = null;
+let externalNotifyError: NoticeContextValue['notifyError'] | null = null;
+let externalConfirm: NoticeContextValue['confirm'] | null = null;
+
+function errorNoticeKey(title: string, message: string): string {
+  return `${title}\0${message}`;
+}
+
+export function notify(message: string, title = 'Notice') {
+  if (externalNotify) {
+    externalNotify(message, title);
+    return;
+  }
+  console.warn(`[notice] ${title}: ${message}`);
+}
+
+export function notifyError(message: string, title = 'Error') {
+  const key = errorNoticeKey(title, message);
+  const now = Date.now();
+  const lastShown = recentErrorNotices.get(key);
+  if (lastShown && now - lastShown < ERROR_NOTICE_COOLDOWN_MS) return;
+  recentErrorNotices.set(key, now);
+
+  if (externalNotifyError) {
+    externalNotifyError(message, title);
+    return;
+  }
+  console.warn(`[notice] ${title}: ${message}`);
+}
+
+export async function confirm(message: string, title = 'Confirm'): Promise<boolean> {
+  if (externalConfirm) {
+    return externalConfirm(message, title);
+  }
+  return window.confirm(message);
+}
+
+export function AppNoticeProvider({ children }: { children: ReactNode }) {
+  const [noticeState, setNoticeState] = useState<NoticeState>({
+    open: false,
+    title: 'Notice',
+    message: '',
+    variant: 'notice',
+  });
+  const [confirmState, setConfirmState] = useState<ConfirmState>({
+    open: false,
+    title: 'Confirm',
+    message: '',
+  });
+  const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+
+  const notifyFn = useCallback((message: string, title = 'Notice') => {
+    setNoticeState({ open: true, title, message, variant: 'notice' });
+  }, []);
+
+  const notifyErrorFn = useCallback((message: string, title = 'Error') => {
+    setNoticeState({ open: true, title, message, variant: 'error' });
+  }, []);
+
+  const confirmFn = useCallback((message: string, title = 'Confirm') => {
+    return new Promise<boolean>((resolve) => {
+      confirmResolverRef.current = resolve;
+      setConfirmState({ open: true, title, message });
+    });
+  }, []);
+
+  const value = useMemo(
+    () => ({ notify: notifyFn, notifyError: notifyErrorFn, confirm: confirmFn }),
+    [notifyFn, notifyErrorFn, confirmFn],
+  );
+
+  externalNotify = notifyFn;
+  externalNotifyError = notifyErrorFn;
+  externalConfirm = confirmFn;
+
+  function closeNotice() {
+    setNoticeState((prev) => ({ ...prev, open: false }));
+  }
+
+  function resolveConfirm(accepted: boolean) {
+    const resolve = confirmResolverRef.current;
+    confirmResolverRef.current = null;
+    setConfirmState((prev) => ({ ...prev, open: false }));
+    if (resolve) resolve(accepted);
+  }
+
+  return (
+    <NoticeContext.Provider value={value}>
+      {children}
+      {noticeState.open ? (
+        <div className="app-notice-overlay" role="presentation" onClick={closeNotice}>
+          <div
+            className={`app-notice-card${noticeState.variant === 'error' ? ' app-notice-error' : ''}`}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-notice-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="app-notice-title">{noticeState.title}</h2>
+            <p className="app-notice-message">{noticeState.message}</p>
+            <div className="app-notice-actions">
+              <button type="button" className="primary" onClick={closeNotice}>
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      {confirmState.open ? (
+        <div
+          className="app-notice-overlay"
+          role="presentation"
+          onClick={() => resolveConfirm(false)}
+        >
+          <div
+            className="app-notice-card"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="app-confirm-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="app-confirm-title">{confirmState.title}</h2>
+            <p className="app-notice-message">{confirmState.message}</p>
+            <div className="app-notice-actions app-notice-actions-split">
+              <button type="button" className="ghost-btn" onClick={() => resolveConfirm(false)}>
+                Cancel
+              </button>
+              <button type="button" className="primary" onClick={() => resolveConfirm(true)}>
+                Confirm
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </NoticeContext.Provider>
+  );
+}
+
+export function useAppNotice(): NoticeContextValue {
+  const ctx = useContext(NoticeContext);
+  if (!ctx) {
+    throw new Error('useAppNotice must be used within AppNoticeProvider');
+  }
+  return ctx;
+}

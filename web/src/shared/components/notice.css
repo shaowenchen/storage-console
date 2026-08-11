@@ -1,0 +1,54 @@
+.app-notice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: var(--bg-modal-overlay);
+}
+
+.app-notice-card {
+  width: min(420px, 100%);
+  padding: 1.25rem 1.5rem;
+  border-radius: 12px;
+  background: var(--bg-modal);
+  border: 1px solid var(--border-subtle);
+  box-shadow: var(--shadow-lg, 0 20px 40px rgba(0, 0, 0, 0.2));
+}
+
+.app-notice-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.1rem;
+}
+
+.app-notice-error {
+  width: min(560px, 100%);
+  border-color: color-mix(in srgb, var(--color-danger) 35%, var(--border-soft));
+}
+
+.app-notice-error h2 {
+  color: var(--color-danger);
+}
+
+.app-notice-message {
+  margin: 0;
+  white-space: pre-wrap;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.app-notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 1.25rem;
+}
+
+.app-notice-actions-split {
+  gap: 0.5rem;
+}
+
+.app-notice-actions button.primary {
+  min-width: 5rem;
+}

@@ -1,0 +1,41 @@
+.collapsed-list-label {
+  display: none;
+}
+
+.rail-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  position: relative;
+}
+
+.rail-menu-btn {
+  width: var(--menu-button-size);
+  height: var(--menu-button-size);
+  padding: 0;
+  line-height: 1;
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.rail-action-menu {
+  display: none;
+  min-width: var(--menu-popover-min-width);
+  padding: 0.35rem;
+  position: absolute;
+  right: calc(var(--rail-toggle-size) + 0.45rem);
+  top: calc(100% + 0.35rem);
+  z-index: 20;
+  border: 1px solid var(--border-soft);
+  border-radius: 14px;
+  background: var(--bg-popover);
+  box-shadow: var(--shadow-popover);
+}
+
+.rail-action-menu.show {
+  display: grid;
+  gap: 0.2rem;
+}
