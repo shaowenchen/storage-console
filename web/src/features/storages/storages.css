@@ -3,6 +3,7 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .page-heading {
@@ -16,6 +17,7 @@
   gap: 0;
   flex: 1;
   min-height: 0;
+  overflow: hidden;
 }
 
 .storage-layout.storage-list-collapsed {
@@ -36,6 +38,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: hidden;
 }
 
 #bucket-list {
@@ -45,9 +48,11 @@
 }
 
 .bucket-panel-footer {
+  flex-shrink: 0;
   margin-top: auto;
   padding-top: 0.55rem;
   border-top: 1px solid var(--border-soft);
+  background: var(--bg-rail);
 }
 
 .bucket-profile-link {
@@ -76,6 +81,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
+  overflow: auto;
 }
 
 .bucket-list-header {
