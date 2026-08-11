@@ -1,9 +1,6 @@
 import { NavLink } from 'react-router-dom';
-import { useAuth } from '../../features/auth/AuthProvider';
 
 export function Sidebar() {
-  const { user } = useAuth();
-
   return (
     <aside className="app-sidebar">
       <div className="app-brand">storage-console</div>
@@ -15,7 +12,6 @@ export function Sidebar() {
         </div>
       </nav>
       <div className="app-sidebar-footer">
-        <div className="sidebar-user">{user}</div>
         <NavLink
           to="/profile"
           className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}

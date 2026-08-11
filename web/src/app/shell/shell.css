@@ -83,12 +83,6 @@
   border-top: 1px solid var(--border-soft);
 }
 
-.sidebar-user {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  padding: 0 0.75rem 0.15rem;
-}
-
 .ghost-btn {
   border: 1px solid var(--border-soft);
   background: var(--bg-ghost);
