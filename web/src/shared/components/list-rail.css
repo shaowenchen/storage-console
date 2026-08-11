@@ -19,6 +19,11 @@
   background: var(--bg-input);
   color: var(--text-muted);
   cursor: pointer;
+  font-size: 1.05rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .rail-action-menu {
