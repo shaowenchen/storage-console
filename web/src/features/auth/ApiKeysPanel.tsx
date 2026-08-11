@@ -4,10 +4,21 @@ import { getApiKeys, rotateApiKey } from '../../shared/upload/api';
 
 type KeyType = 'upload' | 'download';
 
+const KEY_META: Record<KeyType, { label: string; description: string }> = {
+  upload: {
+    label: 'Upload',
+    description: 'Authorize script and Pull & Run uploads',
+  },
+  download: {
+    label: 'Download',
+    description: 'Authorize script downloads and signed links',
+  },
+};
+
 function maskKey(key: string): string {
   if (!key) return '—';
-  if (key.length <= 16) return key;
-  return `${key.slice(0, 8)}…${key.slice(-6)}`;
+  if (key.length <= 18) return key;
+  return `${key.slice(0, 10)}…${key.slice(-6)}`;
 }
 
 async function copyText(value: string): Promise<boolean> {
@@ -19,57 +30,61 @@ async function copyText(value: string): Promise<boolean> {
   }
 }
 
-function KeyRow({
+function KeyCard({
   type,
-  label,
   value,
   busy,
   onCopy,
   onRotate,
 }: {
   type: KeyType;
-  label: string;
   value: string;
   busy: KeyType | null;
   onCopy: (label: string, value: string) => void;
   onRotate: (type: KeyType) => void;
 }) {
   const [revealed, setRevealed] = useState(false);
+  const meta = KEY_META[type];
 
   return (
-    <div className="profile-row">
-      <div className="profile-label">{label}</div>
-      <div className="profile-value">
-        <div className="api-key-cell">
-          <code className="api-key-chip" title={revealed ? value : undefined}>
-            {revealed ? value || '—' : maskKey(value)}
-          </code>
-          <div className="api-key-actions">
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => setRevealed((prev) => !prev)}
-              disabled={!value}
-            >
-              {revealed ? 'Hide' : 'Show'}
-            </button>
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={() => void onCopy(label, value)}
-              disabled={!value}
-            >
-              Copy
-            </button>
-            <button
-              type="button"
-              className="ghost-btn"
-              disabled={busy !== null}
-              onClick={() => void onRotate(type)}
-            >
-              {busy === type ? '…' : 'Rotate'}
-            </button>
-          </div>
+    <div className="api-key-card">
+      <div className="api-key-card-head">
+        <div className="api-key-card-title">{meta.label}</div>
+        <div className="api-key-card-desc">{meta.description}</div>
+      </div>
+      <div className="api-key-field">
+        <code className="api-key-field-value" title={revealed ? value : undefined}>
+          {revealed ? value || '—' : maskKey(value)}
+        </code>
+        <div
+          className="api-key-field-actions"
+          role="group"
+          aria-label={`${meta.label} key actions`}
+        >
+          <button
+            type="button"
+            className="api-key-action"
+            onClick={() => setRevealed((prev) => !prev)}
+            disabled={!value}
+          >
+            {revealed ? 'Hide' : 'Show'}
+          </button>
+          <button
+            type="button"
+            className="api-key-action"
+            onClick={() => void onCopy(meta.label, value)}
+            disabled={!value}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            className="api-key-action api-key-action-danger"
+            disabled={busy !== null}
+            onClick={() => void onRotate(type)}
+          >
+            {busy === type ? '…' : 'Rotate'}
+          </button>
         </div>
       </div>
     </div>
@@ -132,23 +147,9 @@ export function ApiKeysPanel() {
   }
 
   return (
-    <>
-      <KeyRow
-        type="upload"
-        label="Upload"
-        value={upload}
-        busy={busy}
-        onCopy={onCopy}
-        onRotate={onRotate}
-      />
-      <KeyRow
-        type="download"
-        label="Download"
-        value={download}
-        busy={busy}
-        onCopy={onCopy}
-        onRotate={onRotate}
-      />
-    </>
+    <div className="api-keys-grid">
+      <KeyCard type="upload" value={upload} busy={busy} onCopy={onCopy} onRotate={onRotate} />
+      <KeyCard type="download" value={download} busy={busy} onCopy={onCopy} onRotate={onRotate} />
+    </div>
   );
 }

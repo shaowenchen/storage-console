@@ -44,11 +44,12 @@ export function ProfilePage() {
           </div>
         </section>
 
-        <section className="profile-section">
-          <div className="profile-section-header">
+        <section className="profile-section profile-section-keys">
+          <div className="profile-section-header profile-section-header-stack">
             <h2>API Keys</h2>
             <p className="profile-section-help">
-              Use with <code>X-API-Key</code> for scripts. Login key cannot call these APIs.
+              Pass these as <code>X-API-Key</code> in scripts. The login key cannot call upload or
+              download APIs.
             </p>
           </div>
           <ApiKeysPanel />
