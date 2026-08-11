@@ -27,9 +27,12 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
   const [testResult, setTestResult] = useState<StorageTestResult | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [testing, setTesting] = useState(false);
+  /** Created by Test Connection before the first explicit Save. */
+  const [draftId, setDraftId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
+    setDraftId(null);
     if (storage) {
       setForm({
         name: storage.name || '',
@@ -51,6 +54,8 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
   }, [open, storage]);
 
   if (!open) return null;
+
+  const editingId = storage?.id || draftId;
 
   function buildPayload(): Partial<StorageFormValues> {
     const body: Partial<StorageFormValues> = {
@@ -78,8 +83,8 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
     }
     setSubmitting(true);
     try {
-      if (storage) {
-        await updateStorage(storage.id, payload);
+      if (editingId) {
+        await updateStorage(editingId, payload);
       } else {
         await createStorage(payload);
       }
@@ -102,10 +107,22 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
     }
     setTesting(true);
     try {
-      let id = storage?.id;
+      let id = editingId;
       if (!id) {
         const created = await createStorage(payload);
         id = created.id;
+        setDraftId(created.id);
+        if (created.secretKeyMasked) {
+          setMaskedSecret(created.secretKeyMasked);
+          setForm((f) => ({ ...f, secretKey: created.secretKeyMasked || f.secretKey }));
+        }
+        onSaved();
+      } else {
+        const updated = await updateStorage(id, payload);
+        if (updated.secretKeyMasked) {
+          setMaskedSecret(updated.secretKeyMasked);
+          setForm((f) => ({ ...f, secretKey: updated.secretKeyMasked || f.secretKey }));
+        }
       }
       await testStorage(id, payload);
       setTestResult({ ok: true, message: 'Connection successful' });
@@ -236,7 +253,7 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
             {testing ? 'Testing…' : 'Test Connection'}
           </button>
           <button type="submit" disabled={submitting}>
-            {submitting ? 'Saving…' : storage ? 'Save' : 'Add'}
+            {submitting ? 'Saving…' : editingId ? 'Save' : 'Add'}
           </button>
         </div>
       </form>
