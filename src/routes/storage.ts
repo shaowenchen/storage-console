@@ -50,10 +50,6 @@ import {
   getBucketById,
   deleteBucket,
   updateBucket,
-  listFilesByBucketPaths,
-  createFileRecord,
-  deleteFileRecord,
-  getFileRecordByBucketPath,
   type Bucket,
 } from '../db/store.js';
 
@@ -483,29 +479,24 @@ router.get(
           relativePath: folderRelativePath,
         });
       }
-      const fileKeys = (result.Contents || [])
-        .filter((object) => object.Key && !object.Key.endsWith('/'))
-        .map((object) => object.Key!);
-      const storedFiles = await listFilesByBucketPaths(bucket.id, fileKeys);
-      const recordsByPath = new Map(storedFiles.map((file) => [file.path, file]));
-      const fileItems = await mapWithConcurrency(fileKeys, S3_CONCURRENCY, async (key) => {
-        const record = recordsByPath.get(key);
-        const object = (result.Contents || []).find((item) => item.Key === key);
+      const fileEntries = (result.Contents || []).filter(
+        (object) => object.Key && !object.Key.endsWith('/'),
+      );
+      const fileItems = await mapWithConcurrency(fileEntries, S3_CONCURRENCY, async (object) => {
+        const key = object.Key!;
         const publicAcl = includeAcl ? await isObjectPublic(client, bucket, key) : false;
         return {
-          type: 'file',
-          id: record?.id,
+          type: 'file' as const,
           key,
           path: key,
-          name: record?.name || objectDisplayName(key),
-          size: object?.Size || 0,
-          username: record?.username || '-',
-          createdAt: record?.createdAt || object?.LastModified?.getTime() || 0,
-          contentType: record?.contentType || null,
-          source: record ? 'studio' : 's3',
+          name: objectDisplayName(key),
+          size: object.Size || 0,
+          createdAt: object.LastModified?.getTime() || 0,
+          contentType: null,
+          source: 's3' as const,
           isPublic: publicAcl,
           publicUrl: publicAcl ? publicObjectUrl(bucket, key) : undefined,
-        } as const;
+        };
       });
       items.push(...fileItems);
 
@@ -705,12 +696,6 @@ router.delete(
     });
 
     await deleteObjectKeys(client, bucket, keys);
-    await Promise.all(
-      keys.map(async (objectKey) => {
-        const record = await getFileRecordByBucketPath(bucket.id, objectKey);
-        if (record) await deleteFileRecord(record.id);
-      }),
-    );
     res.json({ ok: true });
   }),
 );
@@ -792,31 +777,7 @@ router.post(
           Key: nextKey,
         }),
       );
-      const head = await client.send(
-        new HeadObjectCommand({
-          Bucket: bucket.bucketName,
-          Key: nextKey,
-        }),
-      );
-      const oldRecord = await getFileRecordByBucketPath(bucket.id, objectKey);
-      if (oldRecord) await deleteFileRecord(oldRecord.id);
-      const record = await createFileRecord(
-        bucket.id,
-        req.userKeyAuth!.userId,
-        req.userKeyAuth!.user,
-        nextKey,
-        objectDisplayName(nextKey),
-        head.ContentLength || 0,
-        head.ContentType || oldRecord?.contentType || null,
-        {
-          eTag: head.ETag || null,
-          lastModified: head.LastModified?.getTime() || Date.now(),
-          storageClass: head.StorageClass || null,
-          metadata: oldRecord?.metadata || null,
-          source: oldRecord?.source || 'studio',
-        },
-      );
-      return { key: nextKey, id: record.id };
+      return { key: nextKey };
     });
     await deleteObjectKeys(client, bucket, sourceKeys);
 
@@ -1025,13 +986,11 @@ router.post(
     }
 
     const client = getS3Client(bucket);
-    const userId = req.userKeyAuth!.userId;
     const username = req.userKeyAuth!.user;
     const completedInputs = [];
 
     for (const item of completedFiles) {
       const key = stringProp(item, 'key') || '';
-      const relativePath = normalizeBucketPath(stringProp(item, 'relativePath'));
       const basePrefix = bucketListPrefix(bucket);
       if (!key || (basePrefix && !key.startsWith(basePrefix))) {
         sendApiError(res, 400, 'Completed object key is outside the configured bucket path');
@@ -1039,7 +998,7 @@ router.post(
       }
       const name = stringProp(item, 'name') || objectDisplayName(key);
       const contentType = stringProp(item, 'contentType') || null;
-      completedInputs.push({ key, name, contentType, relativePath });
+      completedInputs.push({ key, name, contentType });
     }
 
     const results = await mapWithConcurrency(completedInputs, S3_CONCURRENCY, async (item) => {
@@ -1049,23 +1008,12 @@ router.post(
           Key: item.key,
         }),
       );
-      const record = await createFileRecord(
-        bucket.id,
-        userId,
-        username,
-        item.key,
-        item.name,
-        head.ContentLength || 0,
-        head.ContentType || item.contentType,
-        {
-          eTag: head.ETag || null,
-          lastModified: head.LastModified?.getTime() || Date.now(),
-          storageClass: head.StorageClass || null,
-          metadata: { relativePath: item.relativePath },
-          source: 'studio',
-        },
-      );
-      return { id: record.id, name: record.name, size: record.size, key: record.path };
+      return {
+        name: item.name,
+        size: head.ContentLength || 0,
+        key: item.key,
+        contentType: head.ContentType || item.contentType,
+      };
     });
 
     log.info('Completed direct storage uploads', {

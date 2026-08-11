@@ -1,4 +1,4 @@
-export type { Bucket, StorageFile } from './types.js';
+export type { Bucket } from './types.js';
 
 export {
   createBucket,
@@ -10,13 +10,3 @@ export {
   updateBucket,
   migratePlaintextBucketCredentials,
 } from './repos/buckets.js';
-
-export {
-  createFileRecord,
-  listFiles,
-  getFileRecord,
-  getFileRecordByBucketPath,
-  listFilesByBucketPaths,
-  listFileRecordsByIds,
-  deleteFileRecord,
-} from './repos/files.js';

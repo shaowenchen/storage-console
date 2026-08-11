@@ -58,26 +58,8 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
     );
   `);
 
-  await adapter.exec(`
-    CREATE TABLE IF NOT EXISTS storage_files (
-      id VARCHAR(36) PRIMARY KEY,
-      bucket_id VARCHAR(36) NOT NULL,
-      user_id VARCHAR(36) NOT NULL,
-      username TEXT NOT NULL,
-      path TEXT NOT NULL,
-      name TEXT NOT NULL,
-      size BIGINT NOT NULL,
-      content_type TEXT,
-      etag TEXT,
-      last_modified BIGINT,
-      storage_class TEXT,
-      metadata TEXT,
-      source VARCHAR(32) NOT NULL DEFAULT 'studio',
-      created_at BIGINT NOT NULL,
-      updated_at BIGINT NOT NULL DEFAULT 0,
-      deleted_at BIGINT
-    );
-  `);
+  // File listings come from object storage directly; drop legacy metadata table if present.
+  await adapter.exec(`DROP TABLE IF EXISTS storage_files`);
 
   await ensureColumn(adapter, 'buckets', 'bucket_path', "VARCHAR(1024) NOT NULL DEFAULT ''");
   await ensureColumn(
@@ -88,27 +70,7 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
   );
   await ensureColumn(adapter, 'buckets', 'deleted_at', 'BIGINT');
   await adapter.run(`UPDATE buckets SET region = '' WHERE region = 'auto'`, []);
-  await ensureColumn(adapter, 'storage_files', 'etag', 'TEXT');
-  await ensureColumn(adapter, 'storage_files', 'last_modified', 'BIGINT');
-  await ensureColumn(adapter, 'storage_files', 'storage_class', 'TEXT');
-  await ensureColumn(adapter, 'storage_files', 'metadata', 'TEXT');
-  await ensureColumn(adapter, 'storage_files', 'source', "VARCHAR(32) NOT NULL DEFAULT 'studio'");
-  await ensureColumn(adapter, 'storage_files', 'updated_at', 'BIGINT NOT NULL DEFAULT 0');
-  await ensureColumn(adapter, 'storage_files', 'deleted_at', 'BIGINT');
   await ensureIndex(adapter, 'buckets', 'idx_buckets_deleted_created', 'deleted_at, created_at');
-  await ensureIndex(
-    adapter,
-    'storage_files',
-    'idx_storage_files_bucket_path',
-    'bucket_id, path',
-    'bucket_id, path(512)',
-  );
-  await ensureIndex(
-    adapter,
-    'storage_files',
-    'idx_storage_files_bucket_deleted_created',
-    'bucket_id, deleted_at, created_at',
-  );
 
   await migrateAuthKeysTable(adapter);
   await ensureAuthKeys(adapter);

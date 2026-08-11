@@ -73,27 +73,17 @@ export async function getBucketById(id: string): Promise<Bucket | undefined> {
 export async function deleteBucket(id: string): Promise<void> {
   const db = await getAdapter();
   const now = Date.now();
-  await db.run('UPDATE storage_files SET deleted_at = ?, updated_at = ? WHERE bucket_id = ?', [
-    now,
-    now,
-    id,
-  ]);
   await db.run('UPDATE buckets SET deleted_at = ?, updated_at = ? WHERE id = ?', [now, now, id]);
 }
 
 export async function restoreBucket(id: string): Promise<void> {
   const db = await getAdapter();
   const now = Date.now();
-  await db.run('UPDATE storage_files SET deleted_at = NULL, updated_at = ? WHERE bucket_id = ?', [
-    now,
-    id,
-  ]);
   await db.run('UPDATE buckets SET deleted_at = NULL, updated_at = ? WHERE id = ?', [now, id]);
 }
 
 export async function permanentlyDeleteBucket(id: string): Promise<void> {
   const db = await getAdapter();
-  await db.run('DELETE FROM storage_files WHERE bucket_id = ?', [id]);
   await db.run('DELETE FROM buckets WHERE id = ?', [id]);
 }
 

@@ -14,15 +14,13 @@ export type Storage = {
 
 export type StorageFileItem = {
   type: 'folder' | 'file';
-  id?: string;
   key: string;
   path: string;
   name: string;
   size?: number;
-  username?: string;
   createdAt?: number;
   contentType?: string | null;
-  source?: 's3' | 'studio';
+  source?: 's3';
   isPublic?: boolean;
   publicUrl?: string;
   relativePath?: string;
