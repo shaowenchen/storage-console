@@ -91,12 +91,7 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
   await ensureColumn(adapter, 'storage_files', 'updated_at', 'BIGINT NOT NULL DEFAULT 0');
   await ensureColumn(adapter, 'storage_files', 'deleted_at', 'BIGINT');
   await ensureIndex(adapter, 'buckets', 'idx_buckets_deleted_created', 'deleted_at, created_at');
-  await ensureIndex(
-    adapter,
-    'storage_files',
-    'idx_storage_files_bucket_path',
-    'bucket_id, path',
-  );
+  await ensureIndex(adapter, 'storage_files', 'idx_storage_files_bucket_path', 'bucket_id, path');
   await ensureIndex(
     adapter,
     'storage_files',

@@ -20,34 +20,36 @@
 
 ## File Structure
 
-| File | Responsibility |
-|------|----------------|
-| `src/db/migrate.ts` | Create `auth_keys` table |
-| `src/db/repos/authKeys.ts` | Ensure/get/rotate key rows |
-| `src/services/authKeyStore.ts` | Bootstrap + in-memory cache; sync getters used by session/crypto |
-| `src/config/env.ts` | Drop session/upload env; login-only production check |
-| `src/middleware/session.ts` | Sign cookies with cached session key |
-| `src/middleware/adminAuth.ts` | Session-only `requireAuth`; upload/download API keys; new download middleware |
-| `src/routes/auth.ts` | Profile keys list/get/rotate |
-| `src/routes/storage.ts` | Download routes use download auth |
-| `src/index.ts` | Await bootstrap before listen |
-| `web/src/shared/upload/api.ts` | Fetch download key helpers |
-| `web/src/features/auth/ApiKeysPanel.tsx` | Copy + rotate UI |
-| `web/src/app/shell/Sidebar.tsx` | Mount API keys panel |
-| `.env.example` / `.env` | Remove obsolete vars |
-| `src/db/repos/authKeys.test.ts` | Unit tests for ensure/rotate |
-| `src/middleware/adminAuth.test.ts` | Auth matrix tests |
+| File                                     | Responsibility                                                                |
+| ---------------------------------------- | ----------------------------------------------------------------------------- |
+| `src/db/migrate.ts`                      | Create `auth_keys` table                                                      |
+| `src/db/repos/authKeys.ts`               | Ensure/get/rotate key rows                                                    |
+| `src/services/authKeyStore.ts`           | Bootstrap + in-memory cache; sync getters used by session/crypto              |
+| `src/config/env.ts`                      | Drop session/upload env; login-only production check                          |
+| `src/middleware/session.ts`              | Sign cookies with cached session key                                          |
+| `src/middleware/adminAuth.ts`            | Session-only `requireAuth`; upload/download API keys; new download middleware |
+| `src/routes/auth.ts`                     | Profile keys list/get/rotate                                                  |
+| `src/routes/storage.ts`                  | Download routes use download auth                                             |
+| `src/index.ts`                           | Await bootstrap before listen                                                 |
+| `web/src/shared/upload/api.ts`           | Fetch download key helpers                                                    |
+| `web/src/features/auth/ApiKeysPanel.tsx` | Copy + rotate UI                                                              |
+| `web/src/app/shell/Sidebar.tsx`          | Mount API keys panel                                                          |
+| `.env.example` / `.env`                  | Remove obsolete vars                                                          |
+| `src/db/repos/authKeys.test.ts`          | Unit tests for ensure/rotate                                                  |
+| `src/middleware/adminAuth.test.ts`       | Auth matrix tests                                                             |
 
 ---
 
 ### Task 1: `auth_keys` persistence
 
 **Files:**
+
 - Modify: `src/db/migrate.ts`
 - Create: `src/db/repos/authKeys.ts`
 - Create: `src/db/repos/authKeys.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `export type AuthKeyType = 'upload' | 'download' | 'session'`
   - `export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void>`
@@ -131,6 +133,7 @@ Expected: PASS
 ### Task 2: In-memory key store + env cleanup
 
 **Files:**
+
 - Create: `src/services/authKeyStore.ts`
 - Modify: `src/config/env.ts`
 - Modify: `src/middleware/session.ts`
@@ -138,6 +141,7 @@ Expected: PASS
 - Modify: `.env.example`, `.env`
 
 **Interfaces:**
+
 - Consumes: `ensureAuthKeys` / `getAuthKey` / `rotateAuthKey` from Task 1; `getDb` from connection
 - Produces:
   - `export async function bootstrapAuthKeys(): Promise<void>`
@@ -178,12 +182,14 @@ Remove `SESSION_SECRET` and `UPLOAD_KEY` lines/comments. Keep `ADMIN_USER_KEY` a
 ### Task 3: Auth middleware + routes
 
 **Files:**
+
 - Modify: `src/middleware/adminAuth.ts`
 - Create: `src/middleware/adminAuth.test.ts`
 - Modify: `src/routes/auth.ts`
 - Modify: `src/routes/storage.ts` (download routes only)
 
 **Interfaces:**
+
 - Produces: `keyType: 'login' | 'upload' | 'download'`; `requireDownloadAuth`; `requireAdminDownloadAuth`
 - `authenticateUserKey` matches upload/download from cache only
 
@@ -221,6 +227,7 @@ Vitest covering: login key rejected for upload/download authenticate; upload acc
 ### Task 4: Frontend API keys UI
 
 **Files:**
+
 - Modify: `web/src/shared/upload/api.ts`
 - Create: `web/src/features/auth/ApiKeysPanel.tsx`
 - Modify: `web/src/app/shell/Sidebar.tsx`
@@ -249,16 +256,16 @@ Show upload + download with copy; rotate button with confirm; load on mount when
 
 ## Spec coverage check
 
-| Spec item | Task |
-|-----------|------|
-| auth_keys table + ensure on migrate | 1 |
-| Auto-gen upload/download/session | 1–2 |
-| Remove SESSION_SECRET / UPLOAD_KEY | 2 |
-| Login key login-only | 3 |
-| Session full console | 3 (unchanged requireAdmin via session) |
-| Upload/download API isolation | 3 |
-| Profile get/rotate APIs | 3 |
-| Download routes download auth | 3 |
-| UI copy/rotate | 4 |
-| Bootstrap before listen | 2 |
-| CREDENTIALS_SECRET optional fallback | 2 |
+| Spec item                            | Task                                   |
+| ------------------------------------ | -------------------------------------- |
+| auth_keys table + ensure on migrate  | 1                                      |
+| Auto-gen upload/download/session     | 1–2                                    |
+| Remove SESSION_SECRET / UPLOAD_KEY   | 2                                      |
+| Login key login-only                 | 3                                      |
+| Session full console                 | 3 (unchanged requireAdmin via session) |
+| Upload/download API isolation        | 3                                      |
+| Profile get/rotate APIs              | 3                                      |
+| Download routes download auth        | 3                                      |
+| UI copy/rotate                       | 4                                      |
+| Bootstrap before listen              | 2                                      |
+| CREDENTIALS_SECRET optional fallback | 2                                      |

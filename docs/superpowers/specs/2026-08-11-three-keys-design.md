@@ -8,11 +8,11 @@ Split credentials into three business keys, minimize required environment variab
 
 ## Decisions
 
-| Key | Source | Purpose | Visible in UI |
-|-----|--------|---------|---------------|
-| Login | Env `ADMIN_USER_KEY` | Sign-in only (`POST /auth/login`) | Configured by operator |
-| Upload | Auto-generated, SQLite `auth_keys` | `X-API-Key` for upload APIs; copy into Pull & Run scripts | Yes (view / copy / rotate) |
-| Download | Auto-generated, SQLite `auth_keys` | `X-API-Key` for download APIs; copy for read-only scripts | Yes (view / copy / rotate) |
+| Key                | Source                                              | Purpose                                                                                         | Visible in UI                   |
+| ------------------ | --------------------------------------------------- | ----------------------------------------------------------------------------------------------- | ------------------------------- |
+| Login              | Env `ADMIN_USER_KEY`                                | Sign-in only (`POST /auth/login`)                                                               | Configured by operator          |
+| Upload             | Auto-generated, SQLite `auth_keys`                  | `X-API-Key` for upload APIs; copy into Pull & Run scripts                                       | Yes (view / copy / rotate)      |
+| Download           | Auto-generated, SQLite `auth_keys`                  | `X-API-Key` for download APIs; copy for read-only scripts                                       | Yes (view / copy / rotate)      |
 | Session (internal) | Auto-generated, SQLite `auth_keys` (`type=session`) | HMAC for session cookies; fallback for S3 credential encryption when `CREDENTIALS_SECRET` unset | No (not exposed, no rotate API) |
 
 ### Privilege rules
@@ -58,12 +58,12 @@ CREATE TABLE IF NOT EXISTS auth_keys (
 
 ## Auth middleware
 
-| Middleware | Accepts |
-|------------|---------|
-| Login handler | `ADMIN_USER_KEY` body only |
+| Middleware                         | Accepts                                                                                |
+| ---------------------------------- | -------------------------------------------------------------------------------------- |
+| Login handler                      | `ADMIN_USER_KEY` body only                                                             |
 | `requireAuth` / admin console APIs | **Session cookie only** — `X-API-Key` with login/upload/download keys is rejected here |
-| `requireUploadAuth` | Session **or** upload key |
-| `requireDownloadAuth` (new) | Session **or** download key |
+| `requireUploadAuth`                | Session **or** upload key                                                              |
+| `requireDownloadAuth` (new)        | Session **or** download key                                                            |
 
 `authenticateUserKey` resolves only upload/download keys from `auth_keys` (never `ADMIN_USER_KEY`). Session auth remains via signed cookie using the persisted session key.
 
@@ -77,12 +77,12 @@ CREATE TABLE IF NOT EXISTS auth_keys (
 
 All profile key endpoints require an authenticated **session** (login).
 
-| Method | Path | Behavior |
-|--------|------|----------|
-| `GET` | `/api/auth/profile/keys` | `{ upload, download }` |
-| `GET` | `/api/auth/profile/keys/upload` | `{ type: 'upload', key }` (keep for existing Upload Modal) |
-| `GET` | `/api/auth/profile/keys/download` | `{ type: 'download', key }` |
-| `POST` | `/api/auth/profile/keys/:type/rotate` | `type` ∈ `upload` \| `download`; returns new key |
+| Method | Path                                  | Behavior                                                   |
+| ------ | ------------------------------------- | ---------------------------------------------------------- |
+| `GET`  | `/api/auth/profile/keys`              | `{ upload, download }`                                     |
+| `GET`  | `/api/auth/profile/keys/upload`       | `{ type: 'upload', key }` (keep for existing Upload Modal) |
+| `GET`  | `/api/auth/profile/keys/download`     | `{ type: 'download', key }`                                |
+| `POST` | `/api/auth/profile/keys/:type/rotate` | `type` ∈ `upload` \| `download`; returns new key           |
 
 Do not expose or rotate `session` via HTTP.
 

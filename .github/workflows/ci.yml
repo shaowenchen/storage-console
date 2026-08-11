@@ -2,43 +2,97 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: 'Comma-separated platforms, e.g. linux/amd64,linux/arm64'
+        required: false
+        default: 'linux/amd64'
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  verify:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: '20'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
 
       - name: Install dependencies
-        run: npm ci
-
-      - name: Lint
-        run: npm run lint
-
-      - name: Test
-        run: npm test
+        run: |
+          npm ci
+          npm --prefix web ci
 
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Test
+        run: npm test
+
       - name: Build
         run: npm run build
+
+  build-image:
+    needs: verify
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to ACR
+        uses: docker/login-action@v3
+        with:
+          registry: registry.cn-beijing.aliyuncs.com
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve image tags
+        id: image
+        env:
+          ACR_REPOSITORY: ${{ vars.ACR_REPOSITORY }}
+        run: |
+          acr_repository="${ACR_REPOSITORY:-opshub/shaowenchen-storage-console}"
+          echo "dockerhub=docker.io/shaowenchen/storage-console:latest" >> "$GITHUB_OUTPUT"
+          echo "acr=registry.cn-beijing.aliyuncs.com/${acr_repository}:latest" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          platforms: ${{ github.event.inputs.platforms || 'linux/amd64' }}
+          tags: |
+            ${{ steps.image.outputs.dockerhub }}
+            ${{ steps.image.outputs.acr }}

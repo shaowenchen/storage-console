@@ -61,4 +61,3 @@ export function storageUploadScriptUrl(bucketId: string, relativePath: string): 
   if (relativePath) params.set('relativePath', relativePath);
   return `${scriptApiBase()}/api/storages/${encodeURIComponent(bucketId)}/upload-script?${params}`;
 }
-

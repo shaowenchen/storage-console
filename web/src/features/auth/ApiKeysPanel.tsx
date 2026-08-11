@@ -82,7 +82,11 @@ export function ApiKeysPanel() {
           </code>
         </div>
         <div className="api-keys-actions">
-          <button type="button" className="ghost-btn api-keys-btn" onClick={() => void onCopy('Upload', upload)}>
+          <button
+            type="button"
+            className="ghost-btn api-keys-btn"
+            onClick={() => void onCopy('Upload', upload)}
+          >
             Copy
           </button>
           <button

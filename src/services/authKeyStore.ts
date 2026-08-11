@@ -1,9 +1,5 @@
 import { getDb } from '../db/connection.js';
-import {
-  type AuthKeyType,
-  getAuthKey,
-  rotateAuthKey,
-} from '../db/repos/authKeys.js';
+import { type AuthKeyType, getAuthKey, rotateAuthKey } from '../db/repos/authKeys.js';
 
 type Cache = Record<AuthKeyType, string>;
 
