@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "postinstall": "node -e \"const fs=require('fs'); if (!fs.existsSync('web/package.json') || process.env.SKIP_WEB_POSTINSTALL) process.exit(0)\" && npm --prefix web install --include=dev --no-fund --no-audit",
+    "postinstall": "node scripts/postinstall-web.cjs",
     "dev": "tsx watch src/index.ts",
     "web:dev": "npm --prefix web run dev",
     "web:build": "npm --prefix web run build",
