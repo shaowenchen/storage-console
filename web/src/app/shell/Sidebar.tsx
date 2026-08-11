@@ -1,5 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../features/auth/AuthProvider';
+import { ApiKeysPanel } from '../../features/auth/ApiKeysPanel';
 import { useTheme } from '../theme';
 
 type NavItem = {
@@ -38,6 +39,7 @@ export function Sidebar() {
       </nav>
       <div className="app-sidebar-footer">
         <div className="sidebar-user">{user}</div>
+        <ApiKeysPanel />
         <button type="button" className="ghost-btn" onClick={cyclePreference}>
           Theme: {preference}
         </button>

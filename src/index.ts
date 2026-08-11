@@ -2,11 +2,13 @@ import 'dotenv/config';
 import { createApp } from './createApp.js';
 import { createLogger } from './utils/logger.js';
 import { validateProductionConfig, getPort, getHost } from './config/env.js';
+import { bootstrapAppKeys } from './services/appKeyStore.js';
 
 const log = createLogger('server');
 
-function start() {
+async function start() {
   validateProductionConfig();
+  await bootstrapAppKeys();
   const app = createApp();
   const port = getPort();
   const host = getHost();
@@ -15,4 +17,9 @@ function start() {
   });
 }
 
-start();
+void start().catch((error) => {
+  log.error('Failed to start storage-console', {
+    error: error instanceof Error ? error.message : String(error),
+  });
+  process.exit(1);
+});

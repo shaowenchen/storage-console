@@ -34,6 +34,24 @@ export async function getUploadKey(): Promise<string> {
   return data.key || '';
 }
 
+export async function getDownloadKey(): Promise<string> {
+  const res = await apiFetch('/auth/profile/keys/download');
+  const data = await parseJson<{ key?: string }>(res);
+  return data.key || '';
+}
+
+export async function getApiKeys(): Promise<{ upload: string; download: string }> {
+  const res = await apiFetch('/auth/profile/keys');
+  const data = await parseJson<{ upload?: string; download?: string }>(res);
+  return { upload: data.upload || '', download: data.download || '' };
+}
+
+export async function rotateApiKey(type: 'upload' | 'download'): Promise<string> {
+  const res = await apiFetch(`/auth/profile/keys/${type}/rotate`, { method: 'POST' });
+  const data = await parseJson<{ key?: string }>(res);
+  return data.key || '';
+}
+
 export function scriptApiBase(): string {
   return apiUrl('').replace(/\/api\/?$/, '');
 }

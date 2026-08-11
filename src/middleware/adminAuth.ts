@@ -1,14 +1,14 @@
 import type { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'crypto';
 import { sendApiError } from '../domain/apiError.js';
-import { getAdminUserKey, getUploadKey } from '../config/env.js';
+import { getDownloadKey, getUploadKey } from '../config/env.js';
 import { createLogger } from '../utils/logger.js';
 import { readSession } from './session.js';
 
 export interface UserKeyAuth {
   userId: string;
   user: string;
-  keyType: 'login' | 'upload';
+  keyType: 'login' | 'upload' | 'download';
 }
 
 declare global {
@@ -46,15 +46,20 @@ function sessionAuth(req: Request): UserKeyAuth | undefined {
   return { userId: session.userId, user: session.user, keyType: 'login' };
 }
 
-/** Accepts the admin key (or, for upload, the upload key) as an x-api-key header. */
-export function authenticateUserKey(
-  creds: AuthCredentials,
-): UserKeyAuth | undefined {
-  if (safeEqual(creds.key, getAdminUserKey())) {
-    return { userId: 'admin', user: 'admin', keyType: 'login' };
-  }
-  if (safeEqual(creds.key, getUploadKey())) {
-    return { userId: 'admin', user: 'admin', keyType: 'upload' };
+/** Resolves upload/download API keys only — never the login key. */
+export function authenticateUserKey(creds: AuthCredentials): UserKeyAuth | undefined {
+  try {
+    if (safeEqual(creds.key, getUploadKey())) {
+      return { userId: 'admin', user: 'admin', keyType: 'upload' };
+    }
+    if (safeEqual(creds.key, getDownloadKey())) {
+      return { userId: 'admin', user: 'admin', keyType: 'download' };
+    }
+  } catch (error) {
+    log.warn('User authentication failed — app keys unavailable', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return undefined;
   }
   log.warn('User authentication failed', { hasApiKeyHeader: true });
   return undefined;
@@ -67,22 +72,7 @@ export function requireAuth(req: Request, res: Response, next: NextFunction): vo
     return next();
   }
 
-  const creds = extractAuthCredentials(req);
-  if (!creds) {
-    sendApiError(res, 401, 'Authentication required');
-    return;
-  }
-
-  const auth = authenticateUserKey(creds);
-  if (auth) {
-    if (auth.keyType !== 'login') {
-      sendApiError(res, 403, 'Login key required');
-      return;
-    }
-    req.userKeyAuth = auth;
-    return next();
-  }
-  sendApiError(res, 401, 'Unauthorized');
+  sendApiError(res, 401, 'Authentication required');
 }
 
 export function requireUploadAuth(req: Request, res: Response, next: NextFunction): void {
@@ -99,7 +89,28 @@ export function requireUploadAuth(req: Request, res: Response, next: NextFunctio
   }
 
   const auth = authenticateUserKey(creds);
-  if (auth && (auth.keyType === 'login' || auth.keyType === 'upload')) {
+  if (auth && auth.keyType === 'upload') {
+    req.userKeyAuth = auth;
+    return next();
+  }
+  sendApiError(res, 401, 'Unauthorized');
+}
+
+export function requireDownloadAuth(req: Request, res: Response, next: NextFunction): void {
+  const fromSession = sessionAuth(req);
+  if (fromSession) {
+    req.userKeyAuth = fromSession;
+    return next();
+  }
+
+  const creds = extractAuthCredentials(req);
+  if (!creds) {
+    sendApiError(res, 401, 'Authentication required');
+    return;
+  }
+
+  const auth = authenticateUserKey(creds);
+  if (auth && auth.keyType === 'download') {
     req.userKeyAuth = auth;
     return next();
   }
@@ -115,6 +126,13 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
 
 export function requireAdminUploadAuth(req: Request, res: Response, next: NextFunction): void {
   requireUploadAuth(req, res, () => {
+    if (req.userKeyAuth?.user === 'admin') return next();
+    sendApiError(res, 403, 'Admin access required');
+  });
+}
+
+export function requireAdminDownloadAuth(req: Request, res: Response, next: NextFunction): void {
+  requireDownloadAuth(req, res, () => {
     if (req.userKeyAuth?.user === 'admin') return next();
     sendApiError(res, 403, 'Admin access required');
   });

@@ -1,4 +1,5 @@
 import type { DatabaseAdapter } from './adapter.js';
+import { ensureAppKeys } from './repos/appKeys.js';
 
 async function ensureColumn(
   adapter: DatabaseAdapter,
@@ -27,6 +28,10 @@ let storageTablesReady: Promise<void> | undefined;
 export async function ensureStorageTables(adapter: DatabaseAdapter): Promise<void> {
   storageTablesReady ||= ensureStorageTablesOnce(adapter);
   await storageTablesReady;
+}
+
+export function resetMigrateForTests(): void {
+  storageTablesReady = undefined;
 }
 
 async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> {
@@ -98,6 +103,16 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
     'idx_storage_files_bucket_deleted_created',
     'bucket_id, deleted_at, created_at',
   );
+
+  await adapter.exec(`
+    CREATE TABLE IF NOT EXISTS app_keys (
+      type TEXT PRIMARY KEY,
+      key TEXT NOT NULL,
+      created_at BIGINT NOT NULL,
+      rotated_at BIGINT
+    );
+  `);
+  await ensureAppKeys(adapter);
 }
 
 export async function migrateSchema(adapter: DatabaseAdapter): Promise<void> {

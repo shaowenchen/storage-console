@@ -1,28 +1,35 @@
 import { createLogger } from '../utils/logger.js';
+import { getCachedAppKey } from '../services/appKeyStore.js';
 
 const log = createLogger('config');
 
-const DEFAULT_SESSION_SECRET = 'storage-console-session-secret-change-me';
 const DEFAULT_ADMIN_USER_KEY = 'change-me';
 
-export function getSessionSecret(): string {
-  return process.env.SESSION_SECRET || DEFAULT_SESSION_SECRET;
+/** Admin token accepted for sign-in only. */
+export function getAdminUserKey(): string {
+  return (process.env.ADMIN_USER_KEY || DEFAULT_ADMIN_USER_KEY).trim();
 }
 
+/** HMAC secret for session cookies (persisted app key). */
+export function getSessionSecret(): string {
+  return getCachedAppKey('session');
+}
+
+/** Secret for encrypting S3 credentials at rest. */
 export function getCredentialsSecret(): string {
   const explicit = (process.env.CREDENTIALS_SECRET || '').trim();
   if (explicit) return explicit;
   return getSessionSecret();
 }
 
-/** Admin token accepted for sign-in and (via X-API-Key) for script/automation calls. */
-export function getAdminUserKey(): string {
-  return (process.env.ADMIN_USER_KEY || DEFAULT_ADMIN_USER_KEY).trim();
+/** Upload API key (persisted app key). */
+export function getUploadKey(): string {
+  return getCachedAppKey('upload');
 }
 
-/** Upload key used by the "Pull & Run" script; defaults to the admin key. */
-export function getUploadKey(): string {
-  return (process.env.UPLOAD_KEY || '').trim() || getAdminUserKey();
+/** Download API key (persisted app key). */
+export function getDownloadKey(): string {
+  return getCachedAppKey('download');
 }
 
 export function isProductionLike(): boolean {
@@ -40,11 +47,6 @@ export function getHost(): string {
 
 export function validateProductionConfig(): void {
   if (!isProductionLike()) return;
-
-  const sessionSecret = getSessionSecret();
-  if (!sessionSecret || sessionSecret === DEFAULT_SESSION_SECRET) {
-    throw new Error('SESSION_SECRET must be set to a strong unique value in production');
-  }
 
   const adminKey = getAdminUserKey();
   if (!adminKey || adminKey === DEFAULT_ADMIN_USER_KEY) {

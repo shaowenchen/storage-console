@@ -2,8 +2,9 @@ import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/adminAuth.js';
 import { clearSessionCookie, readSession, setSessionCookie } from '../middleware/session.js';
-import { getAdminUserKey, getUploadKey } from '../config/env.js';
+import { getAdminUserKey, getDownloadKey, getUploadKey } from '../config/env.js';
 import { sendApiError } from '../domain/apiError.js';
+import { rotateCachedAppKey } from '../services/appKeyStore.js';
 
 const router = Router();
 
@@ -51,10 +52,40 @@ router.get(
 );
 
 router.get(
+  '/profile/keys',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    res.json({ upload: getUploadKey(), download: getDownloadKey() });
+  }),
+);
+
+router.get(
   '/profile/keys/upload',
   requireAuth,
   asyncHandler(async (_req, res) => {
     res.json({ type: 'upload', key: getUploadKey() });
+  }),
+);
+
+router.get(
+  '/profile/keys/download',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    res.json({ type: 'download', key: getDownloadKey() });
+  }),
+);
+
+router.post(
+  '/profile/keys/:type/rotate',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const type = req.params.type;
+    if (type !== 'upload' && type !== 'download') {
+      sendApiError(res, 400, 'type must be upload or download');
+      return;
+    }
+    const key = await rotateCachedAppKey(type);
+    res.json({ type, key });
   }),
 );
 

@@ -11,7 +11,11 @@ import {
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { requireAdmin, requireAdminUploadAuth } from '../middleware/adminAuth.js';
+import {
+  requireAdmin,
+  requireAdminDownloadAuth,
+  requireAdminUploadAuth,
+} from '../middleware/adminAuth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { mapWithConcurrency } from '../lib/concurrency.js';
 import {
@@ -590,7 +594,7 @@ router.get(
 
 router.get(
   '/:id/download-object',
-  requireAdmin,
+  requireAdminDownloadAuth,
   asyncHandler(async (req, res) => {
     const bucket = await getBucketById(req.params.id);
     if (!bucket) {
@@ -627,7 +631,7 @@ router.get(
 
 router.get(
   '/:id/download-object-link',
-  requireAdmin,
+  requireAdminDownloadAuth,
   asyncHandler(async (req, res) => {
     const bucket = await getBucketById(req.params.id);
     if (!bucket) {
