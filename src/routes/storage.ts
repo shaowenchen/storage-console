@@ -292,13 +292,14 @@ router.put(
       optionalStringProp(req.body, 'bucketPath') !== undefined
         ? normalizeBucketPath(req.body.bucketPath)
         : undefined;
+    const accessKeyWillChange = Boolean(accessKey && accessKey !== bucket.accessKey);
     const secretWillChange = Boolean(secretKey && secretKey !== maskSecretKey(bucket.secretKey));
     const updated = await updateBucket(bucket.id, {
       name,
       storageType,
       endpoint,
       region,
-      accessKey,
+      accessKey: accessKeyWillChange ? accessKey : undefined,
       secretKey: secretWillChange ? secretKey : undefined,
       bucketName,
       bucketPath,
@@ -306,7 +307,7 @@ router.put(
     clearS3Client(bucket.id);
     log.info('Updated storage', {
       ...bucketLogMeta(updated!),
-      accessKeyChanged: Boolean(accessKey && accessKey !== bucket.accessKey),
+      accessKeyChanged: accessKeyWillChange,
       secretKeyChanged: secretWillChange,
     });
     res.json(serializeBucket(updated!));
