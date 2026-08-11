@@ -17,9 +17,14 @@ async function ensureIndex(
   table: string,
   name: string,
   columns: string,
+  mysqlColumns = columns,
 ): Promise<void> {
   const indexes = await adapter.indexes(table);
   if (indexes.has(name)) return;
+  if (adapter.type === 'mysql') {
+    await adapter.exec(`CREATE INDEX ${name} ON ${table} (${mysqlColumns})`);
+    return;
+  }
   await adapter.exec(`CREATE INDEX IF NOT EXISTS ${name} ON ${table} (${columns})`);
 }
 
@@ -91,7 +96,13 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
   await ensureColumn(adapter, 'storage_files', 'updated_at', 'BIGINT NOT NULL DEFAULT 0');
   await ensureColumn(adapter, 'storage_files', 'deleted_at', 'BIGINT');
   await ensureIndex(adapter, 'buckets', 'idx_buckets_deleted_created', 'deleted_at, created_at');
-  await ensureIndex(adapter, 'storage_files', 'idx_storage_files_bucket_path', 'bucket_id, path');
+  await ensureIndex(
+    adapter,
+    'storage_files',
+    'idx_storage_files_bucket_path',
+    'bucket_id, path',
+    'bucket_id, path(512)',
+  );
   await ensureIndex(
     adapter,
     'storage_files',
@@ -104,6 +115,14 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
 }
 
 async function tableExists(adapter: DatabaseAdapter, name: string): Promise<boolean> {
+  if (adapter.type === 'mysql') {
+    const row = await adapter.get(
+      `SELECT TABLE_NAME AS name FROM information_schema.TABLES
+       WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?`,
+      [name],
+    );
+    return Boolean(row);
+  }
   const row = await adapter.get(
     `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
     [name],
@@ -124,8 +143,8 @@ async function migrateAuthKeysTable(adapter: DatabaseAdapter): Promise<void> {
   if (!hasAuthKeys) {
     await adapter.exec(`
       CREATE TABLE IF NOT EXISTS auth_keys (
-        type TEXT PRIMARY KEY,
-        key TEXT NOT NULL,
+        type VARCHAR(32) PRIMARY KEY,
+        \`key\` TEXT NOT NULL,
         created_at BIGINT NOT NULL,
         rotated_at BIGINT
       );
@@ -133,10 +152,17 @@ async function migrateAuthKeysTable(adapter: DatabaseAdapter): Promise<void> {
   }
 
   if (hasAppKeys && hasAuthKeys) {
-    await adapter.exec(`
-      INSERT OR IGNORE INTO auth_keys (type, key, created_at, rotated_at)
-      SELECT type, key, created_at, rotated_at FROM app_keys
-    `);
+    if (adapter.type === 'mysql') {
+      await adapter.exec(`
+        INSERT IGNORE INTO auth_keys (type, \`key\`, created_at, rotated_at)
+        SELECT type, \`key\`, created_at, rotated_at FROM app_keys
+      `);
+    } else {
+      await adapter.exec(`
+        INSERT OR IGNORE INTO auth_keys (type, \`key\`, created_at, rotated_at)
+        SELECT type, \`key\`, created_at, rotated_at FROM app_keys
+      `);
+    }
     await adapter.exec(`DROP TABLE IF EXISTS app_keys`);
   }
 }

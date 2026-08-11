@@ -22,7 +22,7 @@ export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void> {
     const row = await adapter.get(`SELECT type FROM auth_keys WHERE type = ?`, [type]);
     if (!row) {
       await adapter.run(
-        `INSERT INTO auth_keys (type, key, created_at, rotated_at) VALUES (?, ?, ?, NULL)`,
+        `INSERT INTO auth_keys (type, \`key\`, created_at, rotated_at) VALUES (?, ?, ?, NULL)`,
         [type, generateKey(), now],
       );
     }
@@ -30,7 +30,7 @@ export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void> {
 }
 
 export async function getAuthKey(adapter: DatabaseAdapter, type: AuthKeyType): Promise<string> {
-  const row = await adapter.get(`SELECT key FROM auth_keys WHERE type = ?`, [type]);
+  const row = await adapter.get(`SELECT \`key\` FROM auth_keys WHERE type = ?`, [type]);
   if (!row?.key || typeof row.key !== 'string') {
     throw new Error(`Missing auth key: ${type}`);
   }
@@ -43,7 +43,7 @@ export async function rotateAuthKey(
 ): Promise<string> {
   const next = generateKey();
   const now = Date.now();
-  await adapter.run(`UPDATE auth_keys SET key = ?, rotated_at = ? WHERE type = ?`, [
+  await adapter.run(`UPDATE auth_keys SET \`key\` = ?, rotated_at = ? WHERE type = ?`, [
     next,
     now,
     type,
