@@ -371,6 +371,43 @@
   background: var(--bg-input);
   color: var(--text-main);
   padding: 0.6rem 0.75rem;
+  box-shadow: none;
+}
+
+.storage-modal-body input:focus,
+.storage-modal-body select:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+.storage-select-wrap {
+  position: relative;
+  display: block;
+}
+
+.storage-select-wrap select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 2.4rem;
+  cursor: pointer;
+  background-image: none;
+}
+
+.storage-select-wrap::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  right: 0.95rem;
+  width: 0.45rem;
+  height: 0.45rem;
+  margin-top: -0.35rem;
+  border-right: 2px solid var(--text-muted);
+  border-bottom: 2px solid var(--text-muted);
+  transform: rotate(45deg);
+  pointer-events: none;
 }
 
 .modal-actions {

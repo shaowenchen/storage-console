@@ -135,12 +135,14 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
         <div className="storage-modal-body">
           <label>
             Type
-            <select
-              value={form.storageType}
-              onChange={(e) => setForm((f) => ({ ...f, storageType: e.target.value }))}
-            >
-              <option value="ObjectStorage">ObjectStorage</option>
-            </select>
+            <span className="storage-select-wrap">
+              <select
+                value={form.storageType}
+                onChange={(e) => setForm((f) => ({ ...f, storageType: e.target.value }))}
+              >
+                <option value="ObjectStorage">Object Storage</option>
+              </select>
+            </span>
           </label>
           <label>
             Display Name
