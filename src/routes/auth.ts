@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/adminAuth.js';
 import { clearSessionCookie, readSession, setSessionCookie } from '../middleware/session.js';
 import { getAdminUserKey, getDownloadKey, getUploadKey } from '../config/env.js';
 import { sendApiError } from '../domain/apiError.js';
-import { rotateCachedAppKey } from '../services/appKeyStore.js';
+import { rotateCachedAuthKey } from '../services/authKeyStore.js';
 
 const router = Router();
 
@@ -84,7 +84,7 @@ router.post(
       sendApiError(res, 400, 'type must be upload or download');
       return;
     }
-    const key = await rotateCachedAppKey(type);
+    const key = await rotateCachedAuthKey(type);
     res.json({ type, key });
   }),
 );

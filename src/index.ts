@@ -2,13 +2,13 @@ import 'dotenv/config';
 import { createApp } from './createApp.js';
 import { createLogger } from './utils/logger.js';
 import { validateProductionConfig, getPort, getHost } from './config/env.js';
-import { bootstrapAppKeys } from './services/appKeyStore.js';
+import { bootstrapAuthKeys } from './services/authKeyStore.js';
 
 const log = createLogger('server');
 
 async function start() {
   validateProductionConfig();
-  await bootstrapAppKeys();
+  await bootstrapAuthKeys();
   const app = createApp();
   const port = getPort();
   const host = getHost();

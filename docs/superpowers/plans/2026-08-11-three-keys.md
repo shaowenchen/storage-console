@@ -4,7 +4,7 @@
 
 **Goal:** Split auth into login (env), upload/download (auto-generated in SQLite), and remove `SESSION_SECRET`/`UPLOAD_KEY` env vars by persisting an internal session key.
 
-**Architecture:** New `app_keys` table + in-memory cache bootstrapped before `listen`. Middleware distinguishes session / upload / download. Profile APIs expose and rotate upload/download. UI shows both keys in the sidebar.
+**Architecture:** New `auth_keys` table + in-memory cache bootstrapped before `listen`. Middleware distinguishes session / upload / download. Profile APIs expose and rotate upload/download. UI shows both keys in the sidebar.
 
 **Tech Stack:** Express, better-sqlite3, vitest, React (existing web app)
 
@@ -22,9 +22,9 @@
 
 | File | Responsibility |
 |------|----------------|
-| `src/db/migrate.ts` | Create `app_keys` table |
-| `src/db/repos/appKeys.ts` | Ensure/get/rotate key rows |
-| `src/services/appKeyStore.ts` | Bootstrap + in-memory cache; sync getters used by session/crypto |
+| `src/db/migrate.ts` | Create `auth_keys` table |
+| `src/db/repos/authKeys.ts` | Ensure/get/rotate key rows |
+| `src/services/authKeyStore.ts` | Bootstrap + in-memory cache; sync getters used by session/crypto |
 | `src/config/env.ts` | Drop session/upload env; login-only production check |
 | `src/middleware/session.ts` | Sign cookies with cached session key |
 | `src/middleware/adminAuth.ts` | Session-only `requireAuth`; upload/download API keys; new download middleware |
@@ -35,31 +35,31 @@
 | `web/src/features/auth/ApiKeysPanel.tsx` | Copy + rotate UI |
 | `web/src/app/shell/Sidebar.tsx` | Mount API keys panel |
 | `.env.example` / `.env` | Remove obsolete vars |
-| `src/db/repos/appKeys.test.ts` | Unit tests for ensure/rotate |
+| `src/db/repos/authKeys.test.ts` | Unit tests for ensure/rotate |
 | `src/middleware/adminAuth.test.ts` | Auth matrix tests |
 
 ---
 
-### Task 1: `app_keys` persistence
+### Task 1: `auth_keys` persistence
 
 **Files:**
 - Modify: `src/db/migrate.ts`
-- Create: `src/db/repos/appKeys.ts`
-- Create: `src/db/repos/appKeys.test.ts`
+- Create: `src/db/repos/authKeys.ts`
+- Create: `src/db/repos/authKeys.test.ts`
 
 **Interfaces:**
 - Produces:
-  - `export type AppKeyType = 'upload' | 'download' | 'session'`
-  - `export async function ensureAppKeys(adapter: DatabaseAdapter): Promise<void>`
-  - `export async function getAppKey(adapter: DatabaseAdapter, type: AppKeyType): Promise<string>`
-  - `export async function rotateAppKey(adapter: DatabaseAdapter, type: 'upload' | 'download'): Promise<string>`
+  - `export type AuthKeyType = 'upload' | 'download' | 'session'`
+  - `export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void>`
+  - `export async function getAuthKey(adapter: DatabaseAdapter, type: AuthKeyType): Promise<string>`
+  - `export async function rotateAuthKey(adapter: DatabaseAdapter, type: 'upload' | 'download'): Promise<string>`
 
 - [ ] **Step 1: Add table to migrate + call ensure**
 
 In `ensureStorageTablesOnce`, after existing tables, add:
 
 ```sql
-CREATE TABLE IF NOT EXISTS app_keys (
+CREATE TABLE IF NOT EXISTS auth_keys (
   type TEXT PRIMARY KEY,
   key TEXT NOT NULL,
   created_at BIGINT NOT NULL,
@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS app_keys (
 );
 ```
 
-At end of `ensureStorageTablesOnce`, `await ensureAppKeys(adapter)`.
+At end of `ensureStorageTablesOnce`, `await ensureAuthKeys(adapter)`.
 
 - [ ] **Step 2: Implement repo**
 
@@ -75,40 +75,40 @@ At end of `ensureStorageTablesOnce`, `await ensureAppKeys(adapter)`.
 import { randomBytes } from 'crypto';
 import type { DatabaseAdapter } from '../adapter.js';
 
-export type AppKeyType = 'upload' | 'download' | 'session';
+export type AuthKeyType = 'upload' | 'download' | 'session';
 
 function generateKey(): string {
   return randomBytes(32).toString('base64url');
 }
 
-export async function ensureAppKeys(adapter: DatabaseAdapter): Promise<void> {
+export async function ensureAuthKeys(adapter: DatabaseAdapter): Promise<void> {
   const now = Date.now();
   for (const type of ['upload', 'download', 'session'] as const) {
-    const row = await adapter.get(`SELECT type FROM app_keys WHERE type = ?`, [type]);
+    const row = await adapter.get(`SELECT type FROM auth_keys WHERE type = ?`, [type]);
     if (!row) {
       await adapter.run(
-        `INSERT INTO app_keys (type, key, created_at, rotated_at) VALUES (?, ?, ?, NULL)`,
+        `INSERT INTO auth_keys (type, key, created_at, rotated_at) VALUES (?, ?, ?, NULL)`,
         [type, generateKey(), now],
       );
     }
   }
 }
 
-export async function getAppKey(adapter: DatabaseAdapter, type: AppKeyType): Promise<string> {
-  const row = await adapter.get(`SELECT key FROM app_keys WHERE type = ?`, [type]);
+export async function getAuthKey(adapter: DatabaseAdapter, type: AuthKeyType): Promise<string> {
+  const row = await adapter.get(`SELECT key FROM auth_keys WHERE type = ?`, [type]);
   if (!row?.key || typeof row.key !== 'string') {
     throw new Error(`Missing app key: ${type}`);
   }
   return row.key;
 }
 
-export async function rotateAppKey(
+export async function rotateAuthKey(
   adapter: DatabaseAdapter,
   type: 'upload' | 'download',
 ): Promise<string> {
   const next = generateKey();
   const now = Date.now();
-  await adapter.run(`UPDATE app_keys SET key = ?, rotated_at = ? WHERE type = ?`, [
+  await adapter.run(`UPDATE auth_keys SET key = ?, rotated_at = ? WHERE type = ?`, [
     next,
     now,
     type,
@@ -123,7 +123,7 @@ Use `SQL_DSN` pointing at a temp file + `resetAdapterForTests` + `getDb`. Cover:
 
 - [ ] **Step 4: Run tests**
 
-Run: `npx vitest run src/db/repos/appKeys.test.ts`
+Run: `npx vitest run src/db/repos/authKeys.test.ts`
 Expected: PASS
 
 ---
@@ -131,28 +131,28 @@ Expected: PASS
 ### Task 2: In-memory key store + env cleanup
 
 **Files:**
-- Create: `src/services/appKeyStore.ts`
+- Create: `src/services/authKeyStore.ts`
 - Modify: `src/config/env.ts`
 - Modify: `src/middleware/session.ts`
 - Modify: `src/index.ts`
 - Modify: `.env.example`, `.env`
 
 **Interfaces:**
-- Consumes: `ensureAppKeys` / `getAppKey` / `rotateAppKey` from Task 1; `getDb` from connection
+- Consumes: `ensureAuthKeys` / `getAuthKey` / `rotateAuthKey` from Task 1; `getDb` from connection
 - Produces:
-  - `export async function bootstrapAppKeys(): Promise<void>`
-  - `export function getCachedAppKey(type: AppKeyType): string`
-  - `export async function rotateCachedAppKey(type: 'upload' | 'download'): Promise<string>`
+  - `export async function bootstrapAuthKeys(): Promise<void>`
+  - `export function getCachedAuthKey(type: AuthKeyType): string`
+  - `export async function rotateCachedAuthKey(type: 'upload' | 'download'): Promise<string>`
   - `getSessionSecret()` / `getCredentialsSecret()` / `getUploadKey()` / `getDownloadKey()` read cache
 
-- [ ] **Step 1: Implement `appKeyStore`**
+- [ ] **Step 1: Implement `authKeyStore`**
 
-Cache object filled by `bootstrapAppKeys` (getDb already migrates). Sync getters throw if not bootstrapped. `rotateCachedAppKey` updates DB then cache.
+Cache object filled by `bootstrapAuthKeys` (getDb already migrates). Sync getters throw if not bootstrapped. `rotateCachedAuthKey` updates DB then cache.
 
 - [ ] **Step 2: Wire env helpers**
 
 - Remove `DEFAULT_SESSION_SECRET` and env `SESSION_SECRET` / `UPLOAD_KEY`.
-- `getSessionSecret()` → `getCachedAppKey('session')`.
+- `getSessionSecret()` → `getCachedAuthKey('session')`.
 - `getCredentialsSecret()` → env `CREDENTIALS_SECRET` or session cache.
 - `getUploadKey()` / `getDownloadKey()` → cache.
 - Production validation: only `ADMIN_USER_KEY` (drop session secret check).
@@ -162,7 +162,7 @@ Cache object filled by `bootstrapAppKeys` (getDb already migrates). Sync getters
 ```ts
 async function start() {
   validateProductionConfig();
-  await bootstrapAppKeys();
+  await bootstrapAuthKeys();
   const app = createApp();
   // listen...
 }
@@ -251,7 +251,7 @@ Show upload + download with copy; rotate button with confirm; load on mount when
 
 | Spec item | Task |
 |-----------|------|
-| app_keys table + ensure on migrate | 1 |
+| auth_keys table + ensure on migrate | 1 |
 | Auto-gen upload/download/session | 1–2 |
 | Remove SESSION_SECRET / UPLOAD_KEY | 2 |
 | Login key login-only | 3 |

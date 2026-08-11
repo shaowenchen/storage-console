@@ -1,5 +1,5 @@
 import { createLogger } from '../utils/logger.js';
-import { getCachedAppKey } from '../services/appKeyStore.js';
+import { getCachedAuthKey } from '../services/authKeyStore.js';
 
 const log = createLogger('config');
 
@@ -10,9 +10,9 @@ export function getAdminUserKey(): string {
   return (process.env.ADMIN_USER_KEY || DEFAULT_ADMIN_USER_KEY).trim();
 }
 
-/** HMAC secret for session cookies (persisted app key). */
+/** HMAC secret for session cookies (persisted auth key). */
 export function getSessionSecret(): string {
-  return getCachedAppKey('session');
+  return getCachedAuthKey('session');
 }
 
 /** Secret for encrypting S3 credentials at rest. */
@@ -22,14 +22,14 @@ export function getCredentialsSecret(): string {
   return getSessionSecret();
 }
 
-/** Upload API key (persisted app key). */
+/** Upload API key (persisted auth key). */
 export function getUploadKey(): string {
-  return getCachedAppKey('upload');
+  return getCachedAuthKey('upload');
 }
 
-/** Download API key (persisted app key). */
+/** Download API key (persisted auth key). */
 export function getDownloadKey(): string {
-  return getCachedAppKey('download');
+  return getCachedAuthKey('download');
 }
 
 export function isProductionLike(): boolean {

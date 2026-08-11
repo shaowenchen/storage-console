@@ -1,5 +1,5 @@
 import type { DatabaseAdapter } from './adapter.js';
-import { ensureAppKeys } from './repos/appKeys.js';
+import { ensureAuthKeys } from './repos/authKeys.js';
 
 async function ensureColumn(
   adapter: DatabaseAdapter,
@@ -104,15 +104,46 @@ async function ensureStorageTablesOnce(adapter: DatabaseAdapter): Promise<void> 
     'bucket_id, deleted_at, created_at',
   );
 
-  await adapter.exec(`
-    CREATE TABLE IF NOT EXISTS app_keys (
-      type TEXT PRIMARY KEY,
-      key TEXT NOT NULL,
-      created_at BIGINT NOT NULL,
-      rotated_at BIGINT
-    );
-  `);
-  await ensureAppKeys(adapter);
+  await migrateAuthKeysTable(adapter);
+  await ensureAuthKeys(adapter);
+}
+
+async function tableExists(adapter: DatabaseAdapter, name: string): Promise<boolean> {
+  const row = await adapter.get(
+    `SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`,
+    [name],
+  );
+  return Boolean(row);
+}
+
+/** Prefer auth_keys; rename legacy app_keys when present. */
+async function migrateAuthKeysTable(adapter: DatabaseAdapter): Promise<void> {
+  const hasAuthKeys = await tableExists(adapter, 'auth_keys');
+  const hasAppKeys = await tableExists(adapter, 'app_keys');
+
+  if (!hasAuthKeys && hasAppKeys) {
+    await adapter.exec(`ALTER TABLE app_keys RENAME TO auth_keys`);
+    return;
+  }
+
+  if (!hasAuthKeys) {
+    await adapter.exec(`
+      CREATE TABLE IF NOT EXISTS auth_keys (
+        type TEXT PRIMARY KEY,
+        key TEXT NOT NULL,
+        created_at BIGINT NOT NULL,
+        rotated_at BIGINT
+      );
+    `);
+  }
+
+  if (hasAppKeys && hasAuthKeys) {
+    await adapter.exec(`
+      INSERT OR IGNORE INTO auth_keys (type, key, created_at, rotated_at)
+      SELECT type, key, created_at, rotated_at FROM app_keys
+    `);
+    await adapter.exec(`DROP TABLE IF EXISTS app_keys`);
+  }
 }
 
 export async function migrateSchema(adapter: DatabaseAdapter): Promise<void> {

@@ -11,9 +11,9 @@ Split credentials into three business keys, minimize required environment variab
 | Key | Source | Purpose | Visible in UI |
 |-----|--------|---------|---------------|
 | Login | Env `ADMIN_USER_KEY` | Sign-in only (`POST /auth/login`) | Configured by operator |
-| Upload | Auto-generated, SQLite `app_keys` | `X-API-Key` for upload APIs; copy into Pull & Run scripts | Yes (view / copy / rotate) |
-| Download | Auto-generated, SQLite `app_keys` | `X-API-Key` for download APIs; copy for read-only scripts | Yes (view / copy / rotate) |
-| Session (internal) | Auto-generated, SQLite `app_keys` (`type=session`) | HMAC for session cookies; fallback for S3 credential encryption when `CREDENTIALS_SECRET` unset | No (not exposed, no rotate API) |
+| Upload | Auto-generated, SQLite `auth_keys` | `X-API-Key` for upload APIs; copy into Pull & Run scripts | Yes (view / copy / rotate) |
+| Download | Auto-generated, SQLite `auth_keys` | `X-API-Key` for download APIs; copy for read-only scripts | Yes (view / copy / rotate) |
+| Session (internal) | Auto-generated, SQLite `auth_keys` (`type=session`) | HMAC for session cookies; fallback for S3 credential encryption when `CREDENTIALS_SECRET` unset | No (not exposed, no rotate API) |
 
 ### Privilege rules
 
@@ -40,7 +40,7 @@ Production validation checks only `ADMIN_USER_KEY` (plus existing non-auth confi
 ## Data model
 
 ```sql
-CREATE TABLE IF NOT EXISTS app_keys (
+CREATE TABLE IF NOT EXISTS auth_keys (
   type TEXT PRIMARY KEY,          -- 'upload' | 'download' | 'session'
   key TEXT NOT NULL,
   created_at BIGINT NOT NULL,
@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS app_keys (
 | `requireUploadAuth` | Session **or** upload key |
 | `requireDownloadAuth` (new) | Session **or** download key |
 
-`authenticateUserKey` resolves only upload/download keys from `app_keys` (never `ADMIN_USER_KEY`). Session auth remains via signed cookie using the persisted session key.
+`authenticateUserKey` resolves only upload/download keys from `auth_keys` (never `ADMIN_USER_KEY`). Session auth remains via signed cookie using the persisted session key.
 
 ### Route mapping
 
@@ -95,17 +95,17 @@ Do not expose or rotate `session` via HTTP.
 
 ## Internal wiring
 
-- Replace `getSessionSecret()` env read with async/sync accessor backed by `app_keys.type = 'session'` (loaded once after DB init, cached in memory).
+- Replace `getSessionSecret()` env read with async/sync accessor backed by `auth_keys.type = 'session'` (loaded once after DB init, cached in memory).
 - `getCredentialsSecret()`: env `CREDENTIALS_SECRET` if set, else persisted session key.
-- Remove `getUploadKey()` env fallback; load upload/download from `app_keys`.
-- Ensure DB migrate + `app_keys` bootstrap complete **before** the HTTP server listens, so cookie signing and API-key auth never race on a missing session/upload/download key.
+- Remove `getUploadKey()` env fallback; load upload/download from `auth_keys`.
+- Ensure DB migrate + `auth_keys` bootstrap complete **before** the HTTP server listens, so cookie signing and API-key auth never race on a missing session/upload/download key.
 
 ## Out of scope
 
 - Multi-user or per-user keys
 - Public share pages that skip session using only download key
 - Env overrides for upload/download/session keys
-- Encrypting `app_keys` rows at rest beyond DB file permissions
+- Encrypting `auth_keys` rows at rest beyond DB file permissions
 
 ## Migration / compatibility notes
 

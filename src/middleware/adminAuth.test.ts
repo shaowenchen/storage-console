@@ -6,10 +6,10 @@ import { resetAdapterForTests } from '../db/adapter.js';
 import { resetMigrateForTests } from '../db/migrate.js';
 import { getAdminUserKey } from '../config/env.js';
 import {
-  bootstrapAppKeys,
-  getCachedAppKey,
-  resetAppKeyStoreForTests,
-} from '../services/appKeyStore.js';
+  bootstrapAuthKeys,
+  getCachedAuthKey,
+  resetAuthKeyStoreForTests,
+} from '../services/authKeyStore.js';
 import { authenticateUserKey } from './adminAuth.js';
 
 describe('authenticateUserKey', () => {
@@ -21,14 +21,14 @@ describe('authenticateUserKey', () => {
     process.env.ADMIN_USER_KEY = 'login-secret-for-tests';
     resetAdapterForTests();
     resetMigrateForTests();
-    resetAppKeyStoreForTests();
-    await bootstrapAppKeys();
+    resetAuthKeyStoreForTests();
+    await bootstrapAuthKeys();
   });
 
   afterEach(() => {
     resetAdapterForTests();
     resetMigrateForTests();
-    resetAppKeyStoreForTests();
+    resetAuthKeyStoreForTests();
     delete process.env.SQL_DSN;
     delete process.env.ADMIN_USER_KEY;
     rmSync(dir, { recursive: true, force: true });
@@ -39,12 +39,12 @@ describe('authenticateUserKey', () => {
   });
 
   it('accepts the upload key as upload', () => {
-    const auth = authenticateUserKey({ key: getCachedAppKey('upload') });
+    const auth = authenticateUserKey({ key: getCachedAuthKey('upload') });
     expect(auth).toEqual({ userId: 'admin', user: 'admin', keyType: 'upload' });
   });
 
   it('accepts the download key as download', () => {
-    const auth = authenticateUserKey({ key: getCachedAppKey('download') });
+    const auth = authenticateUserKey({ key: getCachedAuthKey('download') });
     expect(auth).toEqual({ userId: 'admin', user: 'admin', keyType: 'download' });
   });
 
