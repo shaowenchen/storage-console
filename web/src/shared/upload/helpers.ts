@@ -7,7 +7,7 @@ export function normalizeRelativePath(path = ''): string {
 }
 
 export function uploadTargetPath(
-  bucket: Pick<Storage, 'name' | 'bucketName' | 'bucketPath'> | null | undefined,
+  bucket: Pick<Storage, 'name' | 'bucketPath'> | null | undefined,
   relativePath = '',
 ): string {
   if (!bucket) return 'Choose a storage';
@@ -15,7 +15,7 @@ export function uploadTargetPath(
     .map((part) => String(part || '').replace(/^\/+|\/+$/g, ''))
     .filter(Boolean)
     .join('/');
-  return `${bucket.name} - ${bucket.bucketName}${path ? `/${path}` : ''}`;
+  return path ? `${bucket.name}/${path}` : bucket.name;
 }
 
 export function shellQuote(value: string): string {

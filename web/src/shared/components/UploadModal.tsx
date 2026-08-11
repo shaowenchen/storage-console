@@ -8,11 +8,7 @@ import { runUpload } from '../upload/runUpload';
 import './upload.css';
 
 function storageOptionLabel(storage: Storage): string {
-  const pathSuffix = storage.bucketPath ? `/${storage.bucketPath}` : '';
-  if (storage.name === storage.bucketName) {
-    return pathSuffix ? `${storage.name}${pathSuffix}` : storage.name;
-  }
-  return `${storage.name} · ${storage.bucketName}${pathSuffix}`;
+  return storage.name;
 }
 
 export type UploadModalConfig = {
