@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { confirm, notify, notifyError } from '../../shared/components/AppNotice';
 import { ListRailHeader } from '../../shared/components/ListRailHeader';
 import { ListItemActionMenu } from '../../shared/components/ListItemActionMenu';
@@ -32,6 +33,7 @@ function listingKey(bucketId: string, prefix: string): string {
 }
 
 export function StoragesPage() {
+  const navigate = useNavigate();
   const [storages, setStorages] = useState<Storage[]>([]);
   const [loadingList, setLoadingList] = useState(true);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -359,16 +361,28 @@ export function StoragesPage() {
             toggleClassName="storage-list-toggle"
             toggleTitle={collapsed ? 'Expand storage list' : 'Collapse storage list'}
             menuChildren={
-              <button
-                type="button"
-                className="bucket-action"
-                onClick={() => {
-                  setRailMenuOpen(false);
-                  setModalStorage('new');
-                }}
-              >
-                Add Storage
-              </button>
+              <>
+                <button
+                  type="button"
+                  className="bucket-action"
+                  onClick={() => {
+                    setRailMenuOpen(false);
+                    setModalStorage('new');
+                  }}
+                >
+                  Add Storage
+                </button>
+                <button
+                  type="button"
+                  className="bucket-action"
+                  onClick={() => {
+                    setRailMenuOpen(false);
+                    void navigate('/profile');
+                  }}
+                >
+                  Profile
+                </button>
+              </>
             }
           />
           <div id="bucket-list">

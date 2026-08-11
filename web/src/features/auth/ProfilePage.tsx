@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { ApiKeysPanel } from './ApiKeysPanel';
 import { useTheme, type ThemePreference } from '../../app/theme';
@@ -15,6 +16,9 @@ export function ProfilePage() {
 
   return (
     <div className="page-profile">
+      <Link to="/" className="profile-back-link">
+        ← Storages
+      </Link>
       <h1 className="page-heading">Profile</h1>
 
       <div className="profile-layout">

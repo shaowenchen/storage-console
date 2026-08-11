@@ -5,6 +5,17 @@
   gap: 1rem;
 }
 
+.profile-back-link {
+  width: fit-content;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 0.88rem;
+}
+
+.profile-back-link:hover {
+  color: var(--text-link);
+}
+
 .page-profile .page-heading {
   margin-bottom: 0;
 }
