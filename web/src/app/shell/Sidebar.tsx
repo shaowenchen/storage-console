@@ -1,34 +1,6 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../features/auth/AuthProvider';
 
-type NavItem = {
-  to: string;
-  label: string;
-  end?: boolean;
-};
-
-const NAV: NavItem[] = [
-  { to: '/', label: 'Storages', end: true },
-  { to: '/profile', label: 'Profile' },
-];
-
-function NavSection({ items }: { items: NavItem[] }) {
-  return (
-    <div className="nav-section">
-      {items.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
-          className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
-        >
-          {item.label}
-        </NavLink>
-      ))}
-    </div>
-  );
-}
-
 export function Sidebar() {
   const { user } = useAuth();
 
@@ -36,11 +8,19 @@ export function Sidebar() {
     <aside className="app-sidebar">
       <div className="app-brand">storage-console</div>
       <nav className="app-nav" aria-label="Primary">
-        <NavSection items={NAV} />
+        <div className="nav-section">
+          <NavLink to="/" end className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}>
+            Storages
+          </NavLink>
+        </div>
       </nav>
       <div className="app-sidebar-footer">
-        <NavLink to="/profile" className="sidebar-user-link">
-          {user}
+        <div className="sidebar-user">{user}</div>
+        <NavLink
+          to="/profile"
+          className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
+        >
+          Profile
         </NavLink>
       </div>
     </aside>

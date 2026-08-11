@@ -78,20 +78,15 @@
 .app-sidebar-footer {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.35rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border-soft);
 }
 
-.sidebar-user-link {
-  font-size: 0.85rem;
+.sidebar-user {
+  font-size: 0.8rem;
   color: var(--text-muted);
-  padding: 0.55rem 0.7rem;
-  border-radius: var(--radius-control);
-  text-decoration: none;
-}
-
-.sidebar-user-link:hover {
-  background: var(--bg-soft);
-  color: var(--text-main);
+  padding: 0 0.75rem 0.15rem;
 }
 
 .ghost-btn {
