@@ -240,8 +240,9 @@
   box-shadow: var(--shadow-popover);
 }
 
-.bucket-action,
-.action-btn {
+.bucket-actions .bucket-action,
+.file-menu .bucket-action,
+.rail-action-menu .bucket-action {
   border: 1px solid transparent;
   border-radius: 0.5rem;
   background: transparent;
@@ -253,13 +254,37 @@
   width: 100%;
 }
 
-.bucket-action:hover,
-.action-btn:hover {
+.bucket-actions .bucket-action:hover,
+.file-menu .bucket-action:hover,
+.rail-action-menu .bucket-action:hover {
   background: var(--bg-ghost);
 }
 
-.bucket-action.danger {
+.bucket-actions .bucket-action.danger,
+.file-menu .bucket-action.danger {
   color: var(--color-danger);
+}
+
+.action-btn {
+  border: 1px solid var(--border-soft);
+  border-radius: 0.5rem;
+  background: var(--bg-ghost);
+  color: var(--text-main);
+  padding: 0.35rem 0.7rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+  width: auto;
+  text-align: center;
+}
+
+.action-btn:hover {
+  border-color: var(--border-strong);
+  background: var(--bg-soft);
+}
+
+.action-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .file-toolbar h3 {
