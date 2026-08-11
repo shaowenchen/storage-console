@@ -1,14 +1,16 @@
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../../features/auth/AuthProvider';
-import { ApiKeysPanel } from '../../features/auth/ApiKeysPanel';
-import { useTheme } from '../theme';
 
 type NavItem = {
   to: string;
   label: string;
+  end?: boolean;
 };
 
-const NAV: NavItem[] = [{ to: '/', label: 'Storages' }];
+const NAV: NavItem[] = [
+  { to: '/', label: 'Storages', end: true },
+  { to: '/profile', label: 'Profile' },
+];
 
 function NavSection({ items }: { items: NavItem[] }) {
   return (
@@ -17,7 +19,7 @@ function NavSection({ items }: { items: NavItem[] }) {
         <NavLink
           key={item.to}
           to={item.to}
-          end
+          end={item.end}
           className={({ isActive }) => (isActive ? 'nav-item active' : 'nav-item')}
         >
           {item.label}
@@ -28,8 +30,7 @@ function NavSection({ items }: { items: NavItem[] }) {
 }
 
 export function Sidebar() {
-  const { user, logout } = useAuth();
-  const { preference, cyclePreference } = useTheme();
+  const { user } = useAuth();
 
   return (
     <aside className="app-sidebar">
@@ -38,14 +39,9 @@ export function Sidebar() {
         <NavSection items={NAV} />
       </nav>
       <div className="app-sidebar-footer">
-        <div className="sidebar-user">{user}</div>
-        <ApiKeysPanel />
-        <button type="button" className="ghost-btn" onClick={cyclePreference}>
-          Theme: {preference}
-        </button>
-        <button type="button" className="ghost-btn" onClick={() => void logout()}>
-          Sign out
-        </button>
+        <NavLink to="/profile" className="sidebar-user-link">
+          {user}
+        </NavLink>
       </div>
     </aside>
   );

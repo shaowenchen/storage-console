@@ -4,8 +4,8 @@ import { getApiKeys, rotateApiKey } from '../../shared/upload/api';
 
 function maskKey(key: string): string {
   if (!key) return '—';
-  if (key.length <= 12) return key;
-  return `${key.slice(0, 6)}…${key.slice(-4)}`;
+  if (key.length <= 16) return key;
+  return `${key.slice(0, 8)}…${key.slice(-6)}`;
 }
 
 async function copyText(value: string): Promise<boolean> {
@@ -68,61 +68,58 @@ export function ApiKeysPanel() {
     }
   }
 
+  if (loading) {
+    return <div className="profile-card api-keys-muted">Loading…</div>;
+  }
+
   return (
-    <div className="api-keys-panel">
-      <div className="api-keys-panel-title">API Keys</div>
-      {loading ? (
-        <div className="api-keys-muted">Loading…</div>
-      ) : (
-        <>
-          <div className="api-keys-row">
-            <div className="api-keys-meta">
-              <span className="api-keys-label">Upload</span>
-              <code className="api-keys-value" title={upload}>
-                {maskKey(upload)}
-              </code>
-            </div>
-            <div className="api-keys-actions">
-              <button type="button" className="ghost-btn api-keys-btn" onClick={() => void onCopy('Upload', upload)}>
-                Copy
-              </button>
-              <button
-                type="button"
-                className="ghost-btn api-keys-btn"
-                disabled={busy !== null}
-                onClick={() => void onRotate('upload')}
-              >
-                {busy === 'upload' ? '…' : 'Rotate'}
-              </button>
-            </div>
-          </div>
-          <div className="api-keys-row">
-            <div className="api-keys-meta">
-              <span className="api-keys-label">Download</span>
-              <code className="api-keys-value" title={download}>
-                {maskKey(download)}
-              </code>
-            </div>
-            <div className="api-keys-actions">
-              <button
-                type="button"
-                className="ghost-btn api-keys-btn"
-                onClick={() => void onCopy('Download', download)}
-              >
-                Copy
-              </button>
-              <button
-                type="button"
-                className="ghost-btn api-keys-btn"
-                disabled={busy !== null}
-                onClick={() => void onRotate('download')}
-              >
-                {busy === 'download' ? '…' : 'Rotate'}
-              </button>
-            </div>
-          </div>
-        </>
-      )}
+    <div className="profile-card api-keys-panel">
+      <div className="api-keys-row">
+        <div className="api-keys-meta">
+          <span className="api-keys-label">Upload</span>
+          <code className="api-keys-value" title={upload}>
+            {maskKey(upload)}
+          </code>
+        </div>
+        <div className="api-keys-actions">
+          <button type="button" className="ghost-btn api-keys-btn" onClick={() => void onCopy('Upload', upload)}>
+            Copy
+          </button>
+          <button
+            type="button"
+            className="ghost-btn api-keys-btn"
+            disabled={busy !== null}
+            onClick={() => void onRotate('upload')}
+          >
+            {busy === 'upload' ? '…' : 'Rotate'}
+          </button>
+        </div>
+      </div>
+      <div className="api-keys-row">
+        <div className="api-keys-meta">
+          <span className="api-keys-label">Download</span>
+          <code className="api-keys-value" title={download}>
+            {maskKey(download)}
+          </code>
+        </div>
+        <div className="api-keys-actions">
+          <button
+            type="button"
+            className="ghost-btn api-keys-btn"
+            onClick={() => void onCopy('Download', download)}
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            className="ghost-btn api-keys-btn"
+            disabled={busy !== null}
+            onClick={() => void onRotate('download')}
+          >
+            {busy === 'download' ? '…' : 'Rotate'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

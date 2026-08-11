@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Navigate, Route, Routes } from 'react-router-dom';
 import { useAuth } from '../features/auth/AuthProvider';
 import { LoginPage } from '../features/auth/LoginPage';
+import { ProfilePage } from '../features/auth/ProfilePage';
 import { StoragesPage } from '../features/storages/StoragesPage';
 import { AppShell } from './shell/AppShell';
 
@@ -38,6 +39,7 @@ export function AppRouter() {
         }
       >
         <Route index element={<StoragesPage />} />
+        <Route path="profile" element={<ProfilePage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
