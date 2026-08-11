@@ -39,7 +39,7 @@ export function ListItemActionMenu({
             onOpenMenuChange(open ? null : menuId);
           }}
         >
-          ...
+          ⋮
         </button>
       </div>
       {open ? (

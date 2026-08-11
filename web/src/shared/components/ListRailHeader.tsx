@@ -50,7 +50,7 @@ export function ListRailHeader({
               aria-expanded={menuOpen}
               onClick={() => onMenuOpenChange(!menuOpen)}
             >
-              ...
+              ⋮
             </button>
             {menuOpen ? <div className="rail-action-menu show">{menuChildren}</div> : null}
           </>

@@ -94,7 +94,7 @@ export function FileRowActions({
           onOpenMenuChange(open ? null : menuId);
         }}
       >
-        ...
+        ⋮
       </button>
       <FileActionMenu
         open={open}
