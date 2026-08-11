@@ -79,11 +79,13 @@ export function StoragesPage() {
     try {
       const data = await listStorages();
       setStorages(data);
-      if (selectedId && !data.some((s) => s.id === selectedId)) {
-        setSelectedId(null);
-        setItems([]);
-        setNextCursor(null);
-      }
+      const stillSelected = selectedId && data.some((s) => s.id === selectedId);
+      if (stillSelected) return;
+      const firstId = data[0]?.id ?? null;
+      setSelectedId(firstId);
+      setPrefix('');
+      setItems([]);
+      setNextCursor(null);
     } catch (err) {
       notifyError(requestErrorMessage(err, 'Failed to load storages'), 'Failed to load storages');
     } finally {
