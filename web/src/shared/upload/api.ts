@@ -52,18 +52,23 @@ export async function rotateApiKey(type: 'upload' | 'download'): Promise<string>
   return data.key || '';
 }
 
+/** Absolute API root for CLI scripts, e.g. https://host/api or https://host/prefix/api */
 export function scriptApiBase(): string {
-  return apiUrl('').replace(/\/api\/?$/, '');
+  const relativeApiRoot = apiUrl('/').replace(/\/$/, '');
+  if (/^https?:\/\//i.test(relativeApiRoot)) return relativeApiRoot;
+  return `${window.location.origin}${relativeApiRoot}`;
 }
 
 export function storageUploadScriptUrl(bucketId: string, relativePath: string): string {
-  const params = new URLSearchParams({ apiBase: scriptApiBase() });
+  const apiBase = scriptApiBase();
+  const params = new URLSearchParams({ apiBase });
   if (relativePath) params.set('relativePath', relativePath);
-  return `${scriptApiBase()}/api/storages/${encodeURIComponent(bucketId)}/upload-script?${params}`;
+  return `${apiBase}/storages/${encodeURIComponent(bucketId)}/upload-script?${params}`;
 }
 
 export function storageDownloadScriptUrl(bucketId: string, key: string, output?: string): string {
-  const params = new URLSearchParams({ apiBase: scriptApiBase(), key });
+  const apiBase = scriptApiBase();
+  const params = new URLSearchParams({ apiBase, key });
   if (output) params.set('output', output);
-  return `${scriptApiBase()}/api/storages/${encodeURIComponent(bucketId)}/download-script?${params}`;
+  return `${apiBase}/storages/${encodeURIComponent(bucketId)}/download-script?${params}`;
 }

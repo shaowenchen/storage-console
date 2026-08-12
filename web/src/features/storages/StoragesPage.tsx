@@ -238,8 +238,8 @@ export function StoragesPage() {
       const copied = await copyToClipboard(cmd);
       notify(
         copied
-          ? 'Direct download CLI copied. Uses STORAGE_CONSOLE_DOWNLOAD_KEY and pulls from the bucket.'
-          : `Copy failed.\n${cmd}`,
+          ? `Direct download CLI copied.\n${cmd}`
+          : `Copy failed. Select and copy manually:\n${cmd}`,
       );
     } catch {
       notifyError('Failed to create download CLI command');

@@ -119,20 +119,30 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
     if (resolve) resolve(accepted);
   }
 
+  const noticeParts = splitNoticeMessage(noticeState.message);
+  const confirmParts = splitNoticeMessage(confirmState.message);
+
   return (
     <NoticeContext.Provider value={value}>
       {children}
       {noticeState.open ? (
         <div className="app-notice-overlay" role="presentation" onClick={closeNotice}>
           <div
-            className={`app-notice-card${noticeState.variant === 'error' ? ' app-notice-error' : ''}`}
+            className={[
+              'app-notice-card',
+              noticeState.variant === 'error' ? 'app-notice-error' : '',
+              noticeParts.code ? 'app-notice-card-wide' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
             role="dialog"
             aria-modal="true"
             aria-labelledby="app-notice-title"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="app-notice-title">{noticeState.title}</h2>
-            <p className="app-notice-message">{noticeState.message}</p>
+            {noticeParts.text ? <p className="app-notice-message">{noticeParts.text}</p> : null}
+            {noticeParts.code ? <pre className="app-notice-code">{noticeParts.code}</pre> : null}
             <div className="app-notice-actions">
               <button type="button" className="primary" onClick={closeNotice}>
                 OK
@@ -148,14 +158,17 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
           onClick={() => resolveConfirm(false)}
         >
           <div
-            className="app-notice-card"
+            className={['app-notice-card', confirmParts.code ? 'app-notice-card-wide' : '']
+              .filter(Boolean)
+              .join(' ')}
             role="dialog"
             aria-modal="true"
             aria-labelledby="app-confirm-title"
             onClick={(e) => e.stopPropagation()}
           >
             <h2 id="app-confirm-title">{confirmState.title}</h2>
-            <p className="app-notice-message">{confirmState.message}</p>
+            {confirmParts.text ? <p className="app-notice-message">{confirmParts.text}</p> : null}
+            {confirmParts.code ? <pre className="app-notice-code">{confirmParts.code}</pre> : null}
             <div className="app-notice-actions app-notice-actions-split">
               <button type="button" className="ghost-btn" onClick={() => resolveConfirm(false)}>
                 Cancel
@@ -169,6 +182,17 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
       ) : null}
     </NoticeContext.Provider>
   );
+}
+
+function splitNoticeMessage(message: string): { text: string; code: string } {
+  const trimmed = String(message || '');
+  const idx = trimmed.indexOf('\n');
+  if (idx === -1) return { text: trimmed, code: '' };
+  const text = trimmed.slice(0, idx).trim();
+  const rest = trimmed.slice(idx + 1).trim();
+  const looksLikeCode = /^(export |curl |https?:\/\/|FILE_PATH=|STORAGE_CONSOLE_)/m.test(rest);
+  if (!looksLikeCode) return { text: trimmed, code: '' };
+  return { text, code: rest };
 }
 
 export function useAppNotice(): NoticeContextValue {
