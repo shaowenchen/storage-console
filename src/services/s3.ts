@@ -329,9 +329,9 @@ function grantUri(grant: Grant): string {
 
 function isPublicReadGrant(grant: Grant): boolean {
   const uri = grantUri(grant);
+  // Match AWS + common S3-compatible AllUsers URIs (URI shape varies by provider).
   const isAllUsers =
     /AllUsers$/i.test(uri) || /groups\/global\/AllUsers/i.test(uri) || /\/AllUsers\b/i.test(uri);
-  if (!isAllUsers && grant.Grantee?.Type !== 'Group') return false;
   if (!isAllUsers) return false;
   const permission = String(grant.Permission || '');
   return permission === 'READ' || permission === 'FULL_CONTROL';
