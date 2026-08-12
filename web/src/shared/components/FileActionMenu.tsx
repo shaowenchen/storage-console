@@ -29,7 +29,7 @@ export function FileActionMenu({
     <div className="file-menu">
       {!isFolder && onDownload ? (
         <button type="button" className="bucket-action" onClick={onDownload}>
-          Download
+          Download(direct)
         </button>
       ) : null}
       {!isFolder && onCopyLink ? (
@@ -39,7 +39,7 @@ export function FileActionMenu({
       ) : null}
       {!isFolder && onCopyDownloadCli ? (
         <button type="button" className="bucket-action" onClick={onCopyDownloadCli}>
-          Copy Download CLI
+          Download(cli)
         </button>
       ) : null}
       <button type="button" className="bucket-action" onClick={onMove}>
