@@ -370,6 +370,7 @@
 
 .file-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
@@ -379,6 +380,23 @@
   border-bottom: 1px solid var(--border-table);
   text-align: left;
   vertical-align: middle;
+  overflow: hidden;
+}
+
+.file-table .col-size {
+  width: 5.5rem;
+}
+
+.file-table .col-acl {
+  width: 5rem;
+}
+
+.file-table .col-date {
+  width: 9.75rem;
+}
+
+.file-table .col-actions {
+  width: 2.75rem;
 }
 
 .file-table thead th {
@@ -398,11 +416,19 @@
   background: var(--bg-table-row-hover);
 }
 
+.object-cell {
+  min-width: 0;
+}
+
 .object-name {
+  display: block;
   font-weight: 600;
   font-size: 0.9rem;
   color: var(--text-main);
   line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .object-meta {
@@ -410,15 +436,36 @@
   font-size: 0.72rem;
   color: var(--text-muted);
   line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .object-cell.clickable {
   cursor: pointer;
 }
 
+.table-size {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--text-main);
+  font-size: 0.85rem;
+}
+
 .table-acl {
   white-space: nowrap;
   font-size: 0.85rem;
+}
+
+.table-date {
+  white-space: nowrap;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.file-table td.actions {
+  text-align: right;
 }
 
 .acl-public {
@@ -452,7 +499,11 @@
 
 .file-list-footer {
   margin-top: 0.5rem;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
 }
 
 .empty-state {

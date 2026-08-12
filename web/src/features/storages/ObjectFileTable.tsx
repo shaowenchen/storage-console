@@ -48,24 +48,27 @@ export function ObjectFileTable({
     );
   }
 
-  const sorted = [...items].sort((a, b) => {
-    if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
-    return String(a.key || a.path).localeCompare(String(b.key || b.path));
-  });
-
+  // Keep API/append order so Load more does not reshuffle already-visible rows.
   return (
     <table className="file-table">
+      <colgroup>
+        <col />
+        <col className="col-size" />
+        <col className="col-acl" />
+        <col className="col-date" />
+        <col className="col-actions" />
+      </colgroup>
       <thead>
         <tr>
           <th>Object</th>
-          <th>Size</th>
+          <th className="table-size">Size</th>
           <th>ACL</th>
           <th>Modified</th>
-          <th />
+          <th className="actions" />
         </tr>
       </thead>
       <tbody>
-        {sorted.map((item) => {
+        {items.map((item) => {
           const menuId = `${bucketId}-${item.key}`;
           const isFolder = item.type === 'folder';
           const objectName = isFolder
@@ -121,15 +124,19 @@ export function ObjectFileTable({
               }
             >
               <td
-                className={isFolder ? 'object-cell clickable' : undefined}
+                className={isFolder ? 'object-cell clickable' : 'object-cell'}
                 onClick={isFolder ? () => onOpenFolder(item.relativePath || '') : undefined}
               >
                 <span className="object-name" title={item.key}>
                   {objectName}
                 </span>
-                {showMeta ? <div className="object-meta">{metaPath}</div> : null}
+                {showMeta ? (
+                  <div className="object-meta" title={metaPath}>
+                    {metaPath}
+                  </div>
+                ) : null}
               </td>
-              <td>{isFolder ? '-' : formatSize(item.size)}</td>
+              <td className="table-size">{isFolder ? '-' : formatSize(item.size)}</td>
               <td className="table-acl">
                 {isFolder ? (
                   '-'
@@ -158,6 +165,9 @@ export function ObjectFileTable({
                   }
                   isFolder={isFolder}
                   isPublic={item.isPublic}
+                  publicUrl={item.publicUrl}
+                  aclSupported={item.aclSupported}
+                  aclResolved={item.aclResolved}
                   onDownload={!isFolder ? () => onDownload(item.key) : undefined}
                   onCopyLink={!isFolder ? () => onCopyLink(item) : undefined}
                   onCopyDownloadCli={!isFolder ? () => onCopyDownloadCli(item) : undefined}

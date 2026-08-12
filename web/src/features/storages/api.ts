@@ -79,9 +79,10 @@ export async function deleteStorageObject(
   key: string,
   isPrefix = false,
 ): Promise<void> {
-  const params = new URLSearchParams({ key, isPrefix: isPrefix ? '1' : '0' });
+  const recursive = isPrefix || key.endsWith('/');
+  const params = new URLSearchParams({ key, isPrefix: recursive ? '1' : '0' });
   const res = await apiFetch(`/storages/${bucketId}/object?${params}`, { method: 'DELETE' });
-  await parseJson<{ ok: boolean }>(res);
+  await parseJson<{ ok: boolean; objectCount?: number }>(res);
 }
 
 export async function moveStorageObject(

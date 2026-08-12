@@ -716,11 +716,14 @@ router.delete(
       sendApiError(res, 400, 'Object key is required');
       return;
     }
-    const isPrefix = req.query.prefix === '1';
     const client = getS3Client(bucket);
-    const keys = isPrefix
-      ? await listObjectKeysByPrefix(client, bucket, key.endsWith('/') ? key : `${key}/`)
-      : [key];
+    // Prefer isPrefix; accept legacy `prefix=1` for older clients.
+    const { keys, isPrefix } = await resolveMutationKeys(
+      client,
+      bucket,
+      key,
+      req.query.isPrefix ?? req.query.prefix,
+    );
     if (!keys.length) {
       sendApiError(res, 404, 'Object not found');
       return;
@@ -735,7 +738,7 @@ router.delete(
     });
 
     await deleteObjectKeys(client, bucket, keys);
-    res.json({ ok: true });
+    res.json({ ok: true, objectCount: keys.length });
   }),
 );
 

@@ -68,12 +68,27 @@ export function StoragesPage() {
     prefix: string;
   }>();
   const aclHydrateGen = useRef(0);
+  const listingScopeRef = useRef({ bucketId: '', prefix: '' });
 
   const selectedStorage = storages.find((s) => s.id === selectedId);
 
   const updateItemAccess = useCallback(
-    (key: string, access: ObjectAccessPatch) => {
+    (key: string, access: ObjectAccessPatch, scope?: { bucketId: string; prefix: string }) => {
+      const active = listingScopeRef.current;
+      if (scope && (scope.bucketId !== active.bucketId || scope.prefix !== active.prefix)) {
+        return;
+      }
+      const bucketId = scope?.bucketId || active.bucketId;
+      const listPrefix = scope?.prefix ?? active.prefix;
+      if (!bucketId) return;
+
       setItems((prev) => {
+        if (
+          listingScopeRef.current.bucketId !== bucketId ||
+          listingScopeRef.current.prefix !== listPrefix
+        ) {
+          return prev;
+        }
         const next = prev.map((item) =>
           item.key === key
             ? {
@@ -85,23 +100,22 @@ export function StoragesPage() {
               }
             : item,
         );
-        if (selectedId) {
-          const cacheKey = listingKey(selectedId, prefix);
-          const cached = listingCache.get(cacheKey);
-          if (cached) {
-            listingCache.set(cacheKey, { ...cached, items: next });
-          }
+        const cacheKey = listingKey(bucketId, listPrefix);
+        const cached = listingCache.get(cacheKey);
+        if (cached) {
+          listingCache.set(cacheKey, { ...cached, items: next });
         }
         return next;
       });
     },
-    [selectedId, prefix, listingCache],
+    [listingCache],
   );
 
   const hydrateObjectAcls = useCallback(
-    async (bucketId: string, listed: StorageFileItem[]) => {
+    async (bucketId: string, listPrefix: string, listed: StorageFileItem[]) => {
       const pending = listed.filter((item) => item.type === 'file' && !item.aclResolved);
       if (!pending.length) return;
+      const scope = { bucketId, prefix: listPrefix };
       const gen = ++aclHydrateGen.current;
       let cursor = 0;
       const worker = async () => {
@@ -111,14 +125,15 @@ export function StoragesPage() {
           try {
             const access = await getObjectAccess(bucketId, item.key);
             if (aclHydrateGen.current !== gen) return;
-            updateItemAccess(item.key, { ...access, aclResolved: true });
+            updateItemAccess(item.key, { ...access, aclResolved: true }, scope);
           } catch {
             if (aclHydrateGen.current !== gen) return;
-            updateItemAccess(item.key, {
-              isPublic: false,
-              aclSupported: true,
-              aclResolved: true,
-            });
+            // Do not pretend the object is private when the probe failed.
+            updateItemAccess(
+              item.key,
+              { isPublic: false, aclSupported: false, aclResolved: true },
+              scope,
+            );
           }
         }
       };
@@ -161,13 +176,14 @@ export function StoragesPage() {
   const loadFiles = useCallback(
     async (force = false) => {
       if (!selectedId) return;
+      listingScopeRef.current = { bucketId: selectedId, prefix };
       const cacheKey = listingKey(selectedId, prefix);
       if (!force) {
         const cached = listingCache.get(cacheKey);
         if (cached) {
           setItems(cached.items);
           setNextCursor(cached.nextCursor);
-          void hydrateObjectAcls(selectedId, cached.items);
+          void hydrateObjectAcls(selectedId, prefix, cached.items);
           return;
         }
       }
@@ -185,9 +201,10 @@ export function StoragesPage() {
           },
           force,
         );
+        listingScopeRef.current = { bucketId: selectedId, prefix };
         setItems(data.items);
         setNextCursor(data.nextCursor);
-        void hydrateObjectAcls(selectedId, data.items);
+        void hydrateObjectAcls(selectedId, prefix, data.items);
       } catch (err) {
         setItems([]);
         setNextCursor(null);
@@ -226,7 +243,7 @@ export function StoragesPage() {
       });
       const cursor = data.nextCursor || null;
       setNextCursor(cursor);
-      void hydrateObjectAcls(selectedId, newItems);
+      void hydrateObjectAcls(selectedId, prefix, newItems);
     } catch {
       notifyError('Failed to load more files');
     } finally {
@@ -587,16 +604,22 @@ export function StoragesPage() {
                       onDelete={(key, isPrefix) => void onDeleteObject(key, isPrefix)}
                       onItemAccessChange={updateItemAccess}
                     />
-                    {nextCursor ? (
+                    {items.length ? (
                       <div className="file-list-footer">
-                        <button
-                          type="button"
-                          className="action-btn"
-                          disabled={loadingMore}
-                          onClick={() => void onLoadMore()}
-                        >
-                          {loadingMore ? 'Loading…' : 'Load more'}
-                        </button>
+                        <span className="muted">
+                          Loaded {items.length}
+                          {nextCursor ? ' · more available' : ''}
+                        </span>
+                        {nextCursor ? (
+                          <button
+                            type="button"
+                            className="action-btn"
+                            disabled={loadingMore}
+                            onClick={() => void onLoadMore()}
+                          >
+                            {loadingMore ? 'Loading…' : 'Load more'}
+                          </button>
+                        ) : null}
                       </div>
                     ) : null}
                   </>

@@ -14,6 +14,9 @@ type Props = {
   onAccessResolved?: (access: ObjectAccess) => void;
   isFolder?: boolean;
   isPublic?: boolean;
+  publicUrl?: string;
+  aclSupported?: boolean;
+  aclResolved?: boolean;
   onDownload?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
@@ -32,6 +35,9 @@ export function FileRowActions({
   onAccessResolved,
   isFolder = false,
   isPublic = false,
+  publicUrl,
+  aclSupported,
+  aclResolved = false,
   onDownload,
   onCopyLink,
   onCopyDownloadCli,
@@ -55,6 +61,12 @@ export function FileRowActions({
     }
     if (isFolder || !bucketId || !objectKey) return;
 
+    // Reuse list hydration; avoid a second GetObjectAcl on every menu open.
+    if (aclResolved) {
+      setResolvedAccess({ isPublic, publicUrl, aclSupported });
+      return;
+    }
+
     let cancelled = false;
     void getObjectAccess(bucketId, objectKey)
       .then((access) => {
@@ -69,10 +81,9 @@ export function FileRowActions({
     return () => {
       cancelled = true;
     };
-  }, [open, isFolder, bucketId, objectKey]);
+  }, [open, isFolder, bucketId, objectKey, aclResolved, isPublic, publicUrl, aclSupported]);
 
   const displayPublic = resolvedAccess?.isPublic ?? isPublic;
-  // Files: wait for GetObjectAcl probe; hide ACL actions if the bucket/provider doesn't support them.
   const showAclActions = isFolder
     ? true
     : Boolean(resolvedAccess) && resolvedAccess?.aclSupported !== false;
