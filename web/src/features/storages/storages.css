@@ -508,6 +508,13 @@
   box-shadow: var(--shadow-popover);
 }
 
+/* Portaled outside the table so border-collapse / overflow cannot clip it. */
+.file-menu.file-menu-portal {
+  position: fixed;
+  top: auto;
+  z-index: 1100;
+}
+
 .file-list-footer {
   margin-top: 0.5rem;
   display: flex;

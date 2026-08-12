@@ -1,9 +1,16 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { getObjectAccess } from '../../features/storages/api';
 import { FileActionMenu } from './FileActionMenu';
 import { useClickOutside } from '../hooks/useClickOutside';
 
 type ObjectAccess = { isPublic: boolean; publicUrl?: string; aclSupported?: boolean };
+
+type MenuPosition = {
+  top: number;
+  right: number;
+  openUpward: boolean;
+};
 
 type Props = {
   menuId: string;
@@ -26,6 +33,8 @@ type Props = {
   onDelete: () => void;
 };
 
+const MENU_ESTIMATED_HEIGHT = 220;
+
 export function FileRowActions({
   menuId,
   openMenuId,
@@ -47,12 +56,42 @@ export function FileRowActions({
   onDelete,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const onAccessResolvedRef = useRef(onAccessResolved);
   onAccessResolvedRef.current = onAccessResolved;
   const open = openMenuId === menuId;
   const [resolvedAccess, setResolvedAccess] = useState<ObjectAccess | null>(null);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
 
-  useClickOutside(rootRef, open, () => onOpenMenuChange(null));
+  useClickOutside([rootRef, menuRef], open, () => onOpenMenuChange(null));
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPosition(null);
+      return;
+    }
+
+    function updatePosition() {
+      const anchor = rootRef.current?.querySelector('button');
+      if (!(anchor instanceof HTMLElement)) return;
+      const rect = anchor.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUpward = spaceBelow < MENU_ESTIMATED_HEIGHT && rect.top > spaceBelow;
+      setPosition({
+        top: openUpward ? rect.top - 4 : rect.bottom + 4,
+        right: Math.max(8, window.innerWidth - rect.right),
+        openUpward,
+      });
+    }
+
+    updatePosition();
+    window.addEventListener('resize', updatePosition);
+    window.addEventListener('scroll', updatePosition, true);
+    return () => {
+      window.removeEventListener('resize', updatePosition);
+      window.removeEventListener('scroll', updatePosition, true);
+    };
+  }, [open]);
 
   useEffect(() => {
     if (!open) {
@@ -99,6 +138,33 @@ export function FileRowActions({
     };
   }
 
+  const menu =
+    open && position
+      ? createPortal(
+          <FileActionMenu
+            open={open}
+            menuRef={menuRef}
+            className="file-menu file-menu-portal"
+            style={{
+              top: position.openUpward ? undefined : position.top,
+              bottom: position.openUpward ? window.innerHeight - position.top : undefined,
+              right: position.right,
+            }}
+            isFolder={isFolder}
+            isPublic={displayPublic}
+            showAclActions={showAclActions}
+            onDownload={onDownload ? withClose(onDownload) : undefined}
+            onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
+            onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}
+            onMove={withClose(onMove)}
+            onSetPublic={withClose(onSetPublic)}
+            onSetPrivate={withClose(onSetPrivate)}
+            onDelete={withClose(onDelete)}
+          />,
+          document.body,
+        )
+      : null;
+
   return (
     <div className="file-row-actions" ref={rootRef}>
       <button
@@ -118,19 +184,7 @@ export function FileRowActions({
       >
         ⋮
       </button>
-      <FileActionMenu
-        open={open}
-        isFolder={isFolder}
-        isPublic={displayPublic}
-        showAclActions={showAclActions}
-        onDownload={onDownload ? withClose(onDownload) : undefined}
-        onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
-        onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}
-        onMove={withClose(onMove)}
-        onSetPublic={withClose(onSetPublic)}
-        onSetPrivate={withClose(onSetPrivate)}
-        onDelete={withClose(onDelete)}
-      />
+      {menu}
     </div>
   );
 }
