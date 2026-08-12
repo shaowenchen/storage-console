@@ -9,6 +9,8 @@ import { UploadModal } from '../../shared/components/UploadModal';
 import { useListingCache } from '../../shared/hooks/useListingCache';
 import { copyToClipboard, objectAbsoluteKey, objectRelativePath } from '../../shared/format';
 import { requestErrorMessage } from '../../shared/requestError';
+import { getDownloadKey, storageDownloadScriptUrl } from '../../shared/upload/api';
+import { downloadRunCommand } from '../../shared/upload/helpers';
 import {
   deleteStorage,
   deleteStorageObject,
@@ -214,15 +216,33 @@ export function StoragesPage() {
       return;
     }
     try {
-      const { url } = await getDownloadLink(selectedId, item.key);
+      const { url, expiresInSeconds } = await getDownloadLink(selectedId, item.key);
+      const minutes = Math.max(1, Math.round((expiresInSeconds || 900) / 60));
       const copied = await copyToClipboard(url);
       notify(
         copied
-          ? `Download link copied. Valid for 2 hours:\n${url}`
-          : `Copy failed. Download link is valid for 2 hours:\n${url}`,
+          ? `Direct download link copied. Valid for ~${minutes} min:\n${url}`
+          : `Copy failed. Direct download link (valid ~${minutes} min):\n${url}`,
       );
     } catch {
       notifyError('Failed to create download link');
+    }
+  }
+
+  async function onCopyDownloadCli(item: StorageFileItem) {
+    if (!selectedId) return;
+    try {
+      const key = await getDownloadKey();
+      const endpoint = storageDownloadScriptUrl(selectedId, item.key);
+      const cmd = downloadRunCommand(endpoint, key);
+      const copied = await copyToClipboard(cmd);
+      notify(
+        copied
+          ? 'Direct download CLI copied. Uses STORAGE_CONSOLE_DOWNLOAD_KEY and pulls from the bucket.'
+          : `Copy failed.\n${cmd}`,
+      );
+    } catch {
+      notifyError('Failed to create download CLI command');
     }
   }
 
@@ -488,6 +508,7 @@ export function StoragesPage() {
                       onOpenFolder={(relative) => setPrefix(relative)}
                       onDownload={(key) => void onDownload(key)}
                       onCopyLink={(item) => void onCopyLink(item)}
+                      onCopyDownloadCli={(item) => void onCopyDownloadCli(item)}
                       onMove={(key, isPrefix) => void onMove(key, isPrefix)}
                       onDropMove={(sourceKey, folder) => void onDropMove(sourceKey, folder)}
                       onSetPublic={(key, isPrefix) => void onSetPublic(key, isPrefix)}

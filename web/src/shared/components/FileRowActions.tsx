@@ -16,6 +16,7 @@ type Props = {
   isPublic?: boolean;
   onDownload?: () => void;
   onCopyLink?: () => void;
+  onCopyDownloadCli?: () => void;
   onMove: () => void;
   onSetPublic: () => void;
   onSetPrivate: () => void;
@@ -33,6 +34,7 @@ export function FileRowActions({
   isPublic = false,
   onDownload,
   onCopyLink,
+  onCopyDownloadCli,
   onMove,
   onSetPublic,
   onSetPrivate,
@@ -102,6 +104,7 @@ export function FileRowActions({
         isPublic={displayPublic}
         onDownload={onDownload ? withClose(onDownload) : undefined}
         onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
+        onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}
         onMove={withClose(onMove)}
         onSetPublic={withClose(onSetPublic)}
         onSetPrivate={withClose(onSetPrivate)}

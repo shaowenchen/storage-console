@@ -65,10 +65,13 @@ export async function getObjectAccess(
   return parseJson<{ isPublic: boolean; publicUrl?: string }>(res);
 }
 
-export async function getDownloadLink(bucketId: string, key: string): Promise<{ url: string }> {
+export async function getDownloadLink(
+  bucketId: string,
+  key: string,
+): Promise<{ url: string; expiresInSeconds?: number; direct?: boolean }> {
   const params = new URLSearchParams({ key });
   const res = await apiFetch(`/storages/${bucketId}/download-object-link?${params}`);
-  return parseJson<{ url: string }>(res);
+  return parseJson<{ url: string; expiresInSeconds?: number; direct?: boolean }>(res);
 }
 
 export async function deleteStorageObject(

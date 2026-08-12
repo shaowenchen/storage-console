@@ -11,6 +11,7 @@ type Props = {
   onOpenFolder: (relativePrefix: string) => void;
   onDownload: (key: string) => void;
   onCopyLink: (item: StorageFileItem) => void;
+  onCopyDownloadCli: (item: StorageFileItem) => void;
   onMove: (key: string, isPrefix: boolean) => void;
   onDropMove?: (sourceKey: string, targetFolder: StorageFileItem) => void;
   onSetPublic: (key: string, isPrefix: boolean) => void;
@@ -25,6 +26,7 @@ export function ObjectFileTable({
   onOpenFolder,
   onDownload,
   onCopyLink,
+  onCopyDownloadCli,
   onMove,
   onDropMove,
   onSetPublic,
@@ -142,6 +144,7 @@ export function ObjectFileTable({
                   isPublic={item.isPublic}
                   onDownload={!isFolder ? () => onDownload(item.key) : undefined}
                   onCopyLink={!isFolder ? () => onCopyLink(item) : undefined}
+                  onCopyDownloadCli={!isFolder ? () => onCopyDownloadCli(item) : undefined}
                   onMove={() => onMove(item.key, isFolder)}
                   onSetPublic={() => onSetPublic(item.key, isFolder)}
                   onSetPrivate={() => onSetPrivate(item.key, isFolder)}

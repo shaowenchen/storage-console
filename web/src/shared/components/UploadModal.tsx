@@ -227,7 +227,7 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
 
         <div className={`upload-script-card${scriptExpanded ? ' expanded' : ''}`}>
           <div className="upload-script-top">
-            <div className="upload-script-title">Script Upload</div>
+            <div className="upload-script-title">Direct Upload CLI</div>
             <button
               type="button"
               className="button-outline"

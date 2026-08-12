@@ -61,3 +61,9 @@ export function storageUploadScriptUrl(bucketId: string, relativePath: string): 
   if (relativePath) params.set('relativePath', relativePath);
   return `${scriptApiBase()}/api/storages/${encodeURIComponent(bucketId)}/upload-script?${params}`;
 }
+
+export function storageDownloadScriptUrl(bucketId: string, key: string, output?: string): string {
+  const params = new URLSearchParams({ apiBase: scriptApiBase(), key });
+  if (output) params.set('output', output);
+  return `${scriptApiBase()}/api/storages/${encodeURIComponent(bucketId)}/download-script?${params}`;
+}

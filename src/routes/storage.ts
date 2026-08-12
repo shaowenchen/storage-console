@@ -23,9 +23,11 @@ import {
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_FILES,
   S3_CONCURRENCY,
+  S3_PRESIGN_UNSIGNABLE_HEADERS,
   UPLOAD_LINK_EXPIRES_SECONDS,
 } from '../config/upload.js';
 import { createLogger } from '../utils/logger.js';
+import { directDownloadShellScript } from '../services/downloadScript.js';
 import { directUploadShellScript } from '../services/uploadScript.js';
 import {
   attachmentContentDisposition,
@@ -608,7 +610,10 @@ router.get(
         Key: key,
         ResponseContentDisposition: attachmentContentDisposition(filename),
       }),
-      { expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS },
+      {
+        expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS,
+        unsignableHeaders: S3_PRESIGN_UNSIGNABLE_HEADERS,
+      },
     );
 
     log.info('Redirecting storage object download to signed URL', {
@@ -616,6 +621,7 @@ router.get(
       requestedBy: req.userKeyAuth!.user,
       key,
       expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
     });
     res.redirect(url);
   }),
@@ -645,7 +651,10 @@ router.get(
         Key: key,
         ResponseContentDisposition: attachmentContentDisposition(filename),
       }),
-      { expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS },
+      {
+        expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS,
+        unsignableHeaders: S3_PRESIGN_UNSIGNABLE_HEADERS,
+      },
     );
 
     log.info('Created storage object signed download link', {
@@ -653,13 +662,43 @@ router.get(
       requestedBy: req.userKeyAuth!.user,
       key,
       expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
     });
     res.json({
       ok: true,
+      direct: true,
       url,
       expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
       expiresAt: Date.now() + DOWNLOAD_LINK_EXPIRES_SECONDS * 1000,
     });
+  }),
+);
+
+router.get(
+  '/:id/download-script',
+  requireAdminDownloadAuth,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+    const key = String(req.query.key || '').trim();
+    if (!key) {
+      sendApiError(res, 400, 'Object key is required');
+      return;
+    }
+    const apiBase = String(req.query.apiBase || '').trim();
+    const output = String(req.query.output || '').trim() || undefined;
+    res.setHeader('Cache-Control', 'no-store');
+    res.type('text/x-shellscript').send(
+      directDownloadShellScript({
+        apiBase,
+        bucketId: bucket.id,
+        key,
+        output,
+      }),
+    );
   }),
 );
 
@@ -918,7 +957,10 @@ router.post(
           Key: input.key,
           ContentType: input.contentType,
         }),
-        { expiresIn: UPLOAD_LINK_EXPIRES_SECONDS },
+        {
+          expiresIn: UPLOAD_LINK_EXPIRES_SECONDS,
+          unsignableHeaders: S3_PRESIGN_UNSIGNABLE_HEADERS,
+        },
       );
       return {
         name: input.name,
@@ -928,6 +970,7 @@ router.post(
         url,
         headers: { 'Content-Type': input.contentType },
         expiresInSeconds: UPLOAD_LINK_EXPIRES_SECONDS,
+        direct: true,
       };
     });
 
@@ -937,8 +980,14 @@ router.post(
       relativePath: relativePath || '(root)',
       fileCount: uploads.length,
       totalBytes: uploads.reduce((sum, file) => sum + file.size, 0),
+      expiresInSeconds: UPLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
     });
-    res.json({ uploads, expiresInSeconds: UPLOAD_LINK_EXPIRES_SECONDS });
+    res.json({
+      uploads,
+      expiresInSeconds: UPLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
+    });
   }),
 );
 
@@ -957,7 +1006,6 @@ router.get(
     res.type('text/x-shellscript').send(
       directUploadShellScript({
         apiBase,
-        mode: 'storage',
         bucketId: bucket.id,
         relativePath,
       }),

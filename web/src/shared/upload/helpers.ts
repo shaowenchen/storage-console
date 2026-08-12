@@ -25,3 +25,7 @@ export function shellQuote(value: string): string {
 export function uploadRunCommand(endpoint: string, uploadKey: string): string {
   return `export STORAGE_CONSOLE_UPLOAD_KEY=${shellQuote(uploadKey)} && curl -fsSL -H "X-API-Key: $STORAGE_CONSOLE_UPLOAD_KEY" ${shellQuote(endpoint)} | bash`;
 }
+
+export function downloadRunCommand(endpoint: string, downloadKey: string): string {
+  return `export STORAGE_CONSOLE_DOWNLOAD_KEY=${shellQuote(downloadKey)} && curl -fsSL -H "X-API-Key: $STORAGE_CONSOLE_DOWNLOAD_KEY" ${shellQuote(endpoint)} | bash`;
+}

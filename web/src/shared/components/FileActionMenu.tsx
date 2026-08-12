@@ -4,6 +4,7 @@ type Props = {
   isPublic?: boolean;
   onDownload?: () => void;
   onCopyLink?: () => void;
+  onCopyDownloadCli?: () => void;
   onMove: () => void;
   onSetPublic: () => void;
   onSetPrivate: () => void;
@@ -16,6 +17,7 @@ export function FileActionMenu({
   isPublic = false,
   onDownload,
   onCopyLink,
+  onCopyDownloadCli,
   onMove,
   onSetPublic,
   onSetPrivate,
@@ -33,6 +35,11 @@ export function FileActionMenu({
       {!isFolder && onCopyLink ? (
         <button type="button" className="bucket-action" onClick={onCopyLink}>
           Copy Link
+        </button>
+      ) : null}
+      {!isFolder && onCopyDownloadCli ? (
+        <button type="button" className="bucket-action" onClick={onCopyDownloadCli}>
+          Copy Download CLI
         </button>
       ) : null}
       <button type="button" className="bucket-action" onClick={onMove}>
