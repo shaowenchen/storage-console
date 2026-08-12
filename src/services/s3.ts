@@ -338,7 +338,9 @@ function isPublicReadGrant(grant: Grant): boolean {
 }
 
 function isAclUnsupportedError(err: unknown): boolean {
-  const code = String(stringProp(err, 'Code') || stringProp(err, 'code') || stringProp(err, 'name') || '');
+  const code = String(
+    stringProp(err, 'Code') || stringProp(err, 'code') || stringProp(err, 'name') || '',
+  );
   const message = String(err instanceof Error ? err.message : err || '');
   const status = numberProp(objectProp(err, '$metadata'), 'httpStatusCode');
   return (

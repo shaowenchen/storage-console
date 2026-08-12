@@ -369,10 +369,7 @@ export function StoragesPage() {
 
   async function onSetPrivate(key: string, isPrefix: boolean) {
     if (!selectedId) return;
-    if (
-      isPrefix &&
-      !(await confirm(`Make all objects under "${key}" private (recursive)?`))
-    ) {
+    if (isPrefix && !(await confirm(`Make all objects under "${key}" private (recursive)?`))) {
       return;
     }
     try {

@@ -848,12 +848,7 @@ router.post(
     }
 
     const client = getS3Client(bucket);
-    const { keys, isPrefix } = await resolveMutationKeys(
-      client,
-      bucket,
-      key,
-      req.body?.isPrefix,
-    );
+    const { keys, isPrefix } = await resolveMutationKeys(client, bucket, key, req.body?.isPrefix);
     if (!keys.length) {
       sendApiError(res, 404, 'Object not found');
       return;
@@ -892,12 +887,7 @@ router.post(
     }
 
     const client = getS3Client(bucket);
-    const { keys, isPrefix } = await resolveMutationKeys(
-      client,
-      bucket,
-      key,
-      req.body?.isPrefix,
-    );
+    const { keys, isPrefix } = await resolveMutationKeys(client, bucket, key, req.body?.isPrefix);
     if (!keys.length) {
       sendApiError(res, 404, 'Object not found');
       return;
