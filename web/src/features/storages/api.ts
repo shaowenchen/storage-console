@@ -59,10 +59,10 @@ export async function listStorageFiles(
 export async function getObjectAccess(
   bucketId: string,
   key: string,
-): Promise<{ isPublic: boolean; publicUrl?: string }> {
+): Promise<{ isPublic: boolean; publicUrl?: string; aclSupported?: boolean }> {
   const params = new URLSearchParams({ key });
   const res = await apiFetch(`/storages/${bucketId}/object-access?${params}`);
-  return parseJson<{ isPublic: boolean; publicUrl?: string }>(res);
+  return parseJson<{ isPublic: boolean; publicUrl?: string; aclSupported?: boolean }>(res);
 }
 
 export async function getDownloadLink(

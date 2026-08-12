@@ -7,7 +7,6 @@ import {
   HeadObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
-  PutObjectAclCommand,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -43,8 +42,10 @@ import {
   objectDisplayName,
   publicObjectUrl,
   relativeObjectKey,
+  resolveObjectAccess,
   s3CopySource,
   s3ErrorLogMeta,
+  setObjectCannedAcl,
 } from '../services/s3.js';
 import {
   createBucket,
@@ -179,13 +180,7 @@ async function setObjectAclForKeys(
   acl: 'public-read' | 'private',
 ): Promise<void> {
   await mapWithConcurrency(keys, S3_CONCURRENCY, async (key) => {
-    await client.send(
-      new PutObjectAclCommand({
-        Bucket: bucket.bucketName,
-        Key: key,
-        ACL: acl,
-      }),
-    );
+    await setObjectCannedAcl(client, bucket, key, acl);
   });
 }
 
@@ -562,27 +557,12 @@ router.get(
     }
 
     const client = getS3Client(bucket);
-    try {
-      const publicAcl = await isObjectPublic(client, bucket, key);
-      res.json({
-        isPublic: publicAcl,
-        publicUrl: publicAcl ? publicObjectUrl(bucket, key) : undefined,
-      });
-    } catch (err: unknown) {
-      log.warn('Failed to read object access', {
-        ...bucketLogMeta(bucket),
-        key,
-        ...s3ErrorLogMeta(err),
-      });
-      const formatted = formatS3RequestError(err, bucket);
-      sendApiError(
-        res,
-        formatted.status,
-        formatted.message,
-        'object_access_failed',
-        formatted.details,
-      );
-    }
+    const access = await resolveObjectAccess(client, bucket, key);
+    res.json({
+      isPublic: access.isPublic,
+      aclSupported: access.aclSupported,
+      publicUrl: access.publicUrl,
+    });
   }),
 );
 

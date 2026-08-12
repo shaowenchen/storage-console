@@ -2,6 +2,8 @@ type Props = {
   open: boolean;
   isFolder?: boolean;
   isPublic?: boolean;
+  /** When false, hide Set Public/Private (ACL unsupported or still loading for files). */
+  showAclActions?: boolean;
   onDownload?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
@@ -15,6 +17,7 @@ export function FileActionMenu({
   open,
   isFolder = false,
   isPublic = false,
+  showAclActions = true,
   onDownload,
   onCopyLink,
   onCopyDownloadCli,
@@ -45,15 +48,17 @@ export function FileActionMenu({
       <button type="button" className="bucket-action" onClick={onMove}>
         Move
       </button>
-      {isPublic ? (
-        <button type="button" className="bucket-action" onClick={onSetPrivate}>
-          Set Private
-        </button>
-      ) : (
-        <button type="button" className="bucket-action" onClick={onSetPublic}>
-          Set Public
-        </button>
-      )}
+      {showAclActions ? (
+        isPublic ? (
+          <button type="button" className="bucket-action" onClick={onSetPrivate}>
+            Set Private
+          </button>
+        ) : (
+          <button type="button" className="bucket-action" onClick={onSetPublic}>
+            Set Public
+          </button>
+        )
+      ) : null}
       <button type="button" className="bucket-action danger" onClick={onDelete}>
         Delete
       </button>

@@ -1,7 +1,10 @@
 import { createHash } from 'crypto';
 import {
+  CopyObjectCommand,
   GetObjectAclCommand,
+  PutObjectAclCommand,
   S3Client,
+  type Grant,
   type ServiceInputTypes,
   type ServiceOutputTypes,
 } from '@aws-sdk/client-s3';
@@ -313,11 +316,47 @@ export function clearAllS3ClientsForTests(): void {
   }
 }
 
-export async function isObjectPublic(
+export type ObjectAccessResult = {
+  isPublic: boolean;
+  /** False when the provider/bucket does not support object ACLs. */
+  aclSupported: boolean;
+  publicUrl?: string;
+};
+
+function grantUri(grant: Grant): string {
+  return String(grant.Grantee?.URI || '');
+}
+
+function isPublicReadGrant(grant: Grant): boolean {
+  const uri = grantUri(grant);
+  const isAllUsers =
+    /AllUsers$/i.test(uri) || /groups\/global\/AllUsers/i.test(uri) || /\/AllUsers\b/i.test(uri);
+  if (!isAllUsers && grant.Grantee?.Type !== 'Group') return false;
+  if (!isAllUsers) return false;
+  const permission = String(grant.Permission || '');
+  return permission === 'READ' || permission === 'FULL_CONTROL';
+}
+
+function isAclUnsupportedError(err: unknown): boolean {
+  const code = String(stringProp(err, 'Code') || stringProp(err, 'code') || stringProp(err, 'name') || '');
+  const message = String(err instanceof Error ? err.message : err || '');
+  const status = numberProp(objectProp(err, '$metadata'), 'httpStatusCode');
+  return (
+    status === 405 ||
+    status === 501 ||
+    /AccessControlListNotSupported|NotImplemented|MethodNotAllowed|InvalidRequest/i.test(code) ||
+    /AccessControlListNotSupported|ACL.?s? (are )?disabled|does not (allow|support).{0,40}ACL/i.test(
+      message,
+    )
+  );
+}
+
+/** Best-effort public/private probe via GetObjectAcl (lazy; not part of ListObjects). */
+export async function resolveObjectAccess(
   client: S3Client,
   bucket: Bucket,
   key: string,
-): Promise<boolean> {
+): Promise<ObjectAccessResult> {
   try {
     const acl = await client.send(
       new GetObjectAclCommand({
@@ -325,20 +364,79 @@ export async function isObjectPublic(
         Key: key,
       }),
     );
-    return Boolean(
-      (acl.Grants || []).some(
-        (grant) =>
-          grant.Permission === 'READ' &&
-          grant.Grantee?.Type === 'Group' &&
-          /AllUsers$/i.test(grant.Grantee.URI || ''),
-      ),
-    );
+    const isPublic = (acl.Grants || []).some(isPublicReadGrant);
+    return {
+      isPublic,
+      aclSupported: true,
+      publicUrl: isPublic ? publicObjectUrl(bucket, key) : undefined,
+    };
   } catch (err: unknown) {
     log.debug('Unable to read object ACL', {
       ...bucketLogMeta(bucket),
       key,
       ...s3ErrorLogMeta(err),
     });
-    return false;
+    if (isAclUnsupportedError(err)) {
+      return { isPublic: false, aclSupported: false };
+    }
+    return { isPublic: false, aclSupported: true };
+  }
+}
+
+export async function isObjectPublic(
+  client: S3Client,
+  bucket: Bucket,
+  key: string,
+): Promise<boolean> {
+  const access = await resolveObjectAccess(client, bucket, key);
+  return access.isPublic;
+}
+
+/**
+ * Set canned object ACL. Prefer PutObjectAcl; fall back to self-CopyObject with ACL
+ * for providers that reject PutObjectAcl but accept ACL on copy.
+ */
+export async function setObjectCannedAcl(
+  client: S3Client,
+  bucket: Bucket,
+  key: string,
+  acl: 'public-read' | 'private',
+): Promise<void> {
+  try {
+    await client.send(
+      new PutObjectAclCommand({
+        Bucket: bucket.bucketName,
+        Key: key,
+        ACL: acl,
+      }),
+    );
+    return;
+  } catch (err: unknown) {
+    log.debug('PutObjectAcl failed; trying CopyObject ACL fallback', {
+      ...bucketLogMeta(bucket),
+      key,
+      acl,
+      ...s3ErrorLogMeta(err),
+    });
+    try {
+      await client.send(
+        new CopyObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+          CopySource: s3CopySource(bucket.bucketName, key),
+          ACL: acl,
+          MetadataDirective: 'COPY',
+        }),
+      );
+    } catch (copyErr: unknown) {
+      log.warn('Failed to set object ACL via PutObjectAcl and CopyObject', {
+        ...bucketLogMeta(bucket),
+        key,
+        acl,
+        putError: s3ErrorLogMeta(err),
+        copyError: s3ErrorLogMeta(copyErr),
+      });
+      throw err;
+    }
   }
 }

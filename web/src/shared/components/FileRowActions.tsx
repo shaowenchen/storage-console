@@ -3,7 +3,7 @@ import { getObjectAccess } from '../../features/storages/api';
 import { FileActionMenu } from './FileActionMenu';
 import { useClickOutside } from '../hooks/useClickOutside';
 
-type ObjectAccess = { isPublic: boolean; publicUrl?: string };
+type ObjectAccess = { isPublic: boolean; publicUrl?: string; aclSupported?: boolean };
 
 type Props = {
   menuId: string;
@@ -72,6 +72,10 @@ export function FileRowActions({
   }, [open, isFolder, bucketId, objectKey]);
 
   const displayPublic = resolvedAccess?.isPublic ?? isPublic;
+  // Files: wait for GetObjectAcl probe; hide ACL actions if the bucket/provider doesn't support them.
+  const showAclActions = isFolder
+    ? true
+    : Boolean(resolvedAccess) && resolvedAccess?.aclSupported !== false;
 
   function closeMenu() {
     onOpenMenuChange(null);
@@ -102,6 +106,7 @@ export function FileRowActions({
         open={open}
         isFolder={isFolder}
         isPublic={displayPublic}
+        showAclActions={showAclActions}
         onDownload={onDownload ? withClose(onDownload) : undefined}
         onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
         onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}
