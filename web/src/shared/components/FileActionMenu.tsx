@@ -27,14 +27,14 @@ export function FileActionMenu({
 
   return (
     <div className="file-menu">
-      {!isFolder && onDownload ? (
-        <button type="button" className="bucket-action" onClick={onDownload}>
-          Download(direct)
-        </button>
-      ) : null}
       {!isFolder && onCopyLink ? (
         <button type="button" className="bucket-action" onClick={onCopyLink}>
           Copy Link
+        </button>
+      ) : null}
+      {!isFolder && onDownload ? (
+        <button type="button" className="bucket-action" onClick={onDownload}>
+          Download(direct)
         </button>
       ) : null}
       {!isFolder && onCopyDownloadCli ? (
