@@ -619,7 +619,7 @@ export function StoragesPage() {
                 {items.length ? (
                   <div className="file-list-footer">
                     <span className="muted">
-                      Loaded {items.length}
+                      Loaded {items.length} {items.length === 1 ? 'object' : 'objects'}
                       {nextCursor ? ' · more available' : ''}
                     </span>
                     {nextCursor ? (
