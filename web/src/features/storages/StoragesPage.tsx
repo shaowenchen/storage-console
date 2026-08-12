@@ -44,12 +44,12 @@ type ObjectAccessPatch = {
 
 export function StoragesPage() {
   const [storages, setStorages] = useState<Storage[]>([]);
-  const [loadingList, setLoadingList] = useState(true);
+  const [listReady, setListReady] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [prefix, setPrefix] = useState('');
   const [items, setItems] = useState<StorageFileItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [loadingFiles, setLoadingFiles] = useState(false);
+  const [filesPending, setFilesPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const { collapsed, toggleCollapsed } = useRailCollapsed(STORAGE_LIST_KEY);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
@@ -155,21 +155,21 @@ export function StoragesPage() {
   }
 
   const loadStorages = useCallback(async () => {
-    setLoadingList(true);
     try {
       const data = await listStorages();
       setStorages(data);
       const stillSelected = selectedId && data.some((s) => s.id === selectedId);
-      if (stillSelected) return;
-      const firstId = data[0]?.id ?? null;
-      setSelectedId(firstId);
-      setPrefix('');
-      setItems([]);
-      setNextCursor(null);
+      if (!stillSelected) {
+        const firstId = data[0]?.id ?? null;
+        setSelectedId(firstId);
+        setPrefix('');
+        setItems([]);
+        setNextCursor(null);
+      }
     } catch (err) {
       notifyError(requestErrorMessage(err, 'Failed to load storages'), 'Failed to load storages');
     } finally {
-      setLoadingList(false);
+      setListReady(true);
     }
   }, [selectedId]);
 
@@ -181,13 +181,17 @@ export function StoragesPage() {
       if (!force) {
         const cached = listingCache.get(cacheKey);
         if (cached) {
+          setFilesPending(false);
           setItems(cached.items);
           setNextCursor(cached.nextCursor);
           void hydrateObjectAcls(selectedId, prefix, cached.items);
           return;
         }
+        // Silent swap: clear stale rows without a Loading… placeholder.
+        setItems([]);
+        setNextCursor(null);
+        setFilesPending(true);
       }
-      setLoadingFiles(true);
       try {
         const data = await listingCache.fetchCached(
           cacheKey,
@@ -201,18 +205,29 @@ export function StoragesPage() {
           },
           force,
         );
-        listingScopeRef.current = { bucketId: selectedId, prefix };
+        if (
+          listingScopeRef.current.bucketId !== selectedId ||
+          listingScopeRef.current.prefix !== prefix
+        ) {
+          return;
+        }
         setItems(data.items);
         setNextCursor(data.nextCursor);
+        setFilesPending(false);
         void hydrateObjectAcls(selectedId, prefix, data.items);
       } catch (err) {
+        if (
+          listingScopeRef.current.bucketId !== selectedId ||
+          listingScopeRef.current.prefix !== prefix
+        ) {
+          return;
+        }
         setItems([]);
         setNextCursor(null);
+        setFilesPending(false);
         const message = requestErrorMessage(err, 'Failed to load files');
         if (message.includes('failed recently')) return;
         notifyError(message, 'Failed to load storage objects');
-      } finally {
-        setLoadingFiles(false);
       }
     },
     [selectedId, prefix, listingCache, hydrateObjectAcls],
@@ -488,8 +503,7 @@ export function StoragesPage() {
             }
           />
           <div id="bucket-list">
-            {loadingList ? <p className="muted">Loading…</p> : null}
-            {!loadingList && !storages.length ? (
+            {listReady && !storages.length ? (
               <p className="muted">No storages configured.</p>
             ) : null}
             {storages.map((storage) => (
@@ -587,42 +601,38 @@ export function StoragesPage() {
               </div>
               {renderBreadcrumbs()}
               <div className="file-section">
-                {loadingFiles ? <p className="muted">Loading…</p> : null}
-                {!loadingFiles ? (
-                  <>
-                    <ObjectFileTable
-                      bucketId={selectedId!}
-                      items={items}
-                      onOpenFolder={(relative) => setPrefix(relative)}
-                      onDownload={(key) => void onDownload(key)}
-                      onCopyLink={(item) => void onCopyLink(item)}
-                      onCopyDownloadCli={(item) => void onCopyDownloadCli(item)}
-                      onMove={(key, isPrefix) => void onMove(key, isPrefix)}
-                      onDropMove={(sourceKey, folder) => void onDropMove(sourceKey, folder)}
-                      onSetPublic={(key, isPrefix) => void onSetPublic(key, isPrefix)}
-                      onSetPrivate={(key, isPrefix) => void onSetPrivate(key, isPrefix)}
-                      onDelete={(key, isPrefix) => void onDeleteObject(key, isPrefix)}
-                      onItemAccessChange={updateItemAccess}
-                    />
-                    {items.length ? (
-                      <div className="file-list-footer">
-                        <span className="muted">
-                          Loaded {items.length}
-                          {nextCursor ? ' · more available' : ''}
-                        </span>
-                        {nextCursor ? (
-                          <button
-                            type="button"
-                            className="action-btn"
-                            disabled={loadingMore}
-                            onClick={() => void onLoadMore()}
-                          >
-                            {loadingMore ? 'Loading…' : 'Load more'}
-                          </button>
-                        ) : null}
-                      </div>
+                <ObjectFileTable
+                  bucketId={selectedId!}
+                  items={items}
+                  pending={filesPending}
+                  onOpenFolder={(relative) => setPrefix(relative)}
+                  onDownload={(key) => void onDownload(key)}
+                  onCopyLink={(item) => void onCopyLink(item)}
+                  onCopyDownloadCli={(item) => void onCopyDownloadCli(item)}
+                  onMove={(key, isPrefix) => void onMove(key, isPrefix)}
+                  onDropMove={(sourceKey, folder) => void onDropMove(sourceKey, folder)}
+                  onSetPublic={(key, isPrefix) => void onSetPublic(key, isPrefix)}
+                  onSetPrivate={(key, isPrefix) => void onSetPrivate(key, isPrefix)}
+                  onDelete={(key, isPrefix) => void onDeleteObject(key, isPrefix)}
+                  onItemAccessChange={updateItemAccess}
+                />
+                {items.length ? (
+                  <div className="file-list-footer">
+                    <span className="muted">
+                      Loaded {items.length}
+                      {nextCursor ? ' · more available' : ''}
+                    </span>
+                    {nextCursor ? (
+                      <button
+                        type="button"
+                        className="action-btn"
+                        disabled={loadingMore}
+                        onClick={() => void onLoadMore()}
+                      >
+                        Load more
+                      </button>
                     ) : null}
-                  </>
+                  </div>
                 ) : null}
               </div>
             </>

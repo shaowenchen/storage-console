@@ -8,6 +8,8 @@ const DRAG_OBJECT_KEY = 'studio-object-key';
 type Props = {
   bucketId: string;
   items: StorageFileItem[];
+  /** When true and items are empty, render nothing instead of the empty-state panel. */
+  pending?: boolean;
   onOpenFolder: (relativePrefix: string) => void;
   onDownload: (key: string) => void;
   onCopyLink: (item: StorageFileItem) => void;
@@ -23,6 +25,7 @@ type Props = {
 export function ObjectFileTable({
   bucketId,
   items,
+  pending = false,
   onOpenFolder,
   onDownload,
   onCopyLink,
@@ -38,6 +41,7 @@ export function ObjectFileTable({
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
 
   if (!items.length) {
+    if (pending) return null;
     return (
       <div className="empty-state">
         <div>
