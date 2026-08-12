@@ -43,8 +43,32 @@
   color: var(--text-secondary);
 }
 
+.app-notice-code-block {
+  margin-top: 0.75rem;
+}
+
+.app-notice-code-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.app-notice-code-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.app-notice-copy-btn {
+  min-width: 4.25rem !important;
+  padding: 0.3rem 0.65rem !important;
+  font-size: 0.78rem;
+}
+
 .app-notice-code {
-  margin: 0.75rem 0 0;
+  margin: 0;
   padding: 0.75rem 0.85rem;
   max-height: min(40vh, 18rem);
   overflow: auto;

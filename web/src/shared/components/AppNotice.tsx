@@ -7,6 +7,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { copyToClipboard } from '../format';
 import './notice.css';
 
 type NoticeState = {
@@ -83,12 +84,15 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
     message: '',
   });
   const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
+  const [codeCopied, setCodeCopied] = useState(false);
 
   const notifyFn = useCallback((message: string, title = 'Notice') => {
+    setCodeCopied(false);
     setNoticeState({ open: true, title, message, variant: 'notice' });
   }, []);
 
   const notifyErrorFn = useCallback((message: string, title = 'Error') => {
+    setCodeCopied(false);
     setNoticeState({ open: true, title, message, variant: 'error' });
   }, []);
 
@@ -108,8 +112,18 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
   externalNotifyError = notifyErrorFn;
   externalConfirm = confirmFn;
 
+  const noticeParts = splitNoticeMessage(noticeState.message);
+  const confirmParts = splitNoticeMessage(confirmState.message);
+
   function closeNotice() {
+    setCodeCopied(false);
     setNoticeState((prev) => ({ ...prev, open: false }));
+  }
+
+  async function copyNoticeCode() {
+    if (!noticeParts.code) return;
+    const ok = await copyToClipboard(noticeParts.code);
+    setCodeCopied(ok);
   }
 
   function resolveConfirm(accepted: boolean) {
@@ -118,9 +132,6 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
     setConfirmState((prev) => ({ ...prev, open: false }));
     if (resolve) resolve(accepted);
   }
-
-  const noticeParts = splitNoticeMessage(noticeState.message);
-  const confirmParts = splitNoticeMessage(confirmState.message);
 
   return (
     <NoticeContext.Provider value={value}>
@@ -142,7 +153,21 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
           >
             <h2 id="app-notice-title">{noticeState.title}</h2>
             {noticeParts.text ? <p className="app-notice-message">{noticeParts.text}</p> : null}
-            {noticeParts.code ? <pre className="app-notice-code">{noticeParts.code}</pre> : null}
+            {noticeParts.code ? (
+              <div className="app-notice-code-block">
+                <div className="app-notice-code-top">
+                  <span className="app-notice-code-label">Command</span>
+                  <button
+                    type="button"
+                    className="ghost-btn app-notice-copy-btn"
+                    onClick={() => void copyNoticeCode()}
+                  >
+                    {codeCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </div>
+                <pre className="app-notice-code">{noticeParts.code}</pre>
+              </div>
+            ) : null}
             <div className="app-notice-actions">
               <button type="button" className="primary" onClick={closeNotice}>
                 OK
