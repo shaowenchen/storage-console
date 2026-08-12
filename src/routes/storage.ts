@@ -153,6 +153,26 @@ async function listObjectKeysByPrefix(
   return keys;
 }
 
+function isTruthyFlag(value: unknown): boolean {
+  return value === true || value === 1 || value === '1' || value === 'true';
+}
+
+/** Folders (trailing `/` or isPrefix) recurse under the prefix; files stay single-key. */
+async function resolveMutationKeys(
+  client: ReturnType<typeof getS3Client>,
+  bucket: Bucket,
+  key: string,
+  isPrefixFlag: unknown,
+): Promise<{ keys: string[]; isPrefix: boolean }> {
+  const isPrefix = isTruthyFlag(isPrefixFlag) || key.endsWith('/');
+  if (!isPrefix) return { keys: [key], isPrefix: false };
+  const prefix = key.endsWith('/') ? key : `${key}/`;
+  return {
+    keys: await listObjectKeysByPrefix(client, bucket, prefix),
+    isPrefix: true,
+  };
+}
+
 async function deleteObjectKeys(
   client: ReturnType<typeof getS3Client>,
   bucket: Bucket,
@@ -828,10 +848,12 @@ router.post(
     }
 
     const client = getS3Client(bucket);
-    const isPrefix = Boolean(req.body?.isPrefix);
-    const keys = isPrefix
-      ? await listObjectKeysByPrefix(client, bucket, key.endsWith('/') ? key : `${key}/`)
-      : [key];
+    const { keys, isPrefix } = await resolveMutationKeys(
+      client,
+      bucket,
+      key,
+      req.body?.isPrefix,
+    );
     if (!keys.length) {
       sendApiError(res, 404, 'Object not found');
       return;
@@ -845,7 +867,12 @@ router.post(
     });
     await setObjectAclForKeys(client, bucket, keys, 'public-read');
 
-    res.json({ ok: true, key, publicUrl: isPrefix ? undefined : publicObjectUrl(bucket, key) });
+    res.json({
+      ok: true,
+      key,
+      objectCount: keys.length,
+      publicUrl: isPrefix ? undefined : publicObjectUrl(bucket, key),
+    });
   }),
 );
 
@@ -865,10 +892,12 @@ router.post(
     }
 
     const client = getS3Client(bucket);
-    const isPrefix = Boolean(req.body?.isPrefix);
-    const keys = isPrefix
-      ? await listObjectKeysByPrefix(client, bucket, key.endsWith('/') ? key : `${key}/`)
-      : [key];
+    const { keys, isPrefix } = await resolveMutationKeys(
+      client,
+      bucket,
+      key,
+      req.body?.isPrefix,
+    );
     if (!keys.length) {
       sendApiError(res, 404, 'Object not found');
       return;
@@ -882,7 +911,7 @@ router.post(
     });
     await setObjectAclForKeys(client, bucket, keys, 'private');
 
-    res.json({ ok: true, key });
+    res.json({ ok: true, key, objectCount: keys.length });
   }),
 );
 

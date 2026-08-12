@@ -284,12 +284,14 @@ export function StoragesPage() {
 
   async function onSetPublic(key: string, isPrefix: boolean) {
     if (!selectedId) return;
-    if (!(await confirm(`Make "${key}" public? Anyone with the URL may be able to access it.`)))
-      return;
+    const message = isPrefix
+      ? `Make all objects under "${key}" public (recursive)? Anyone with the URLs may be able to access them.`
+      : `Make "${key}" public? Anyone with the URL may be able to access it.`;
+    if (!(await confirm(message))) return;
     try {
       await setObjectPublic(selectedId, key, isPrefix);
       listingCache.invalidate((k) => k.startsWith(`storage:${selectedId}:`));
-      await refreshItemAccess(key);
+      if (!isPrefix) await refreshItemAccess(key);
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to set public');
     }
@@ -297,10 +299,16 @@ export function StoragesPage() {
 
   async function onSetPrivate(key: string, isPrefix: boolean) {
     if (!selectedId) return;
+    if (
+      isPrefix &&
+      !(await confirm(`Make all objects under "${key}" private (recursive)?`))
+    ) {
+      return;
+    }
     try {
       await setObjectPrivate(selectedId, key, isPrefix);
       listingCache.invalidate((k) => k.startsWith(`storage:${selectedId}:`));
-      await refreshItemAccess(key);
+      if (!isPrefix) await refreshItemAccess(key);
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to set private');
     }

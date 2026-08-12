@@ -102,11 +102,13 @@ export async function setObjectPublic(
   key: string,
   isPrefix = false,
 ): Promise<void> {
+  // Directories always recurse under the prefix (including nested keys).
+  const recursive = isPrefix || key.endsWith('/');
   const res = await apiFetch(`/storages/${bucketId}/object/public`, {
     method: 'POST',
-    body: JSON.stringify({ key, isPrefix }),
+    body: JSON.stringify({ key, isPrefix: recursive }),
   });
-  await parseJson<{ ok: boolean }>(res);
+  await parseJson<{ ok: boolean; objectCount?: number }>(res);
 }
 
 export async function setObjectPrivate(
@@ -114,9 +116,10 @@ export async function setObjectPrivate(
   key: string,
   isPrefix = false,
 ): Promise<void> {
+  const recursive = isPrefix || key.endsWith('/');
   const res = await apiFetch(`/storages/${bucketId}/object/private`, {
     method: 'POST',
-    body: JSON.stringify({ key, isPrefix }),
+    body: JSON.stringify({ key, isPrefix: recursive }),
   });
-  await parseJson<{ ok: boolean }>(res);
+  await parseJson<{ ok: boolean; objectCount?: number }>(res);
 }
