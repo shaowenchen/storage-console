@@ -551,26 +551,21 @@ export function StoragesPage() {
           ) : (
             <>
               <div className="file-toolbar">
-                <h3>Object Storage Browser</h3>
-              </div>
-              <div className="storage-meta">
-                <div className="storage-meta-item">
-                  <div className="storage-meta-label">Storage</div>
-                  <div className="storage-meta-value">{selectedStorage.bucketName || '-'}</div>
-                </div>
-                <div className="storage-meta-item">
-                  <div className="storage-meta-label">Type</div>
-                  <div className="storage-meta-value">
-                    {selectedStorage.storageType || 'ObjectStorage'}
-                  </div>
-                </div>
-                <div className="storage-meta-item wide">
-                  <div className="storage-meta-label">Endpoint</div>
-                  <div className="storage-meta-value">{selectedStorage.endpoint || '-'}</div>
-                </div>
-                <div className="storage-meta-item">
-                  <div className="storage-meta-label">Region</div>
-                  <div className="storage-meta-value">{selectedStorage.region || '(empty)'}</div>
+                <div className="file-toolbar-main">
+                  <h3>Object Storage Browser</h3>
+                  <p className="storage-meta-line" title={selectedStorage.endpoint || undefined}>
+                    <span>{selectedStorage.bucketName || '-'}</span>
+                    <span className="meta-sep">·</span>
+                    <span>{selectedStorage.storageType || 'ObjectStorage'}</span>
+                    <span className="meta-sep">·</span>
+                    <span className="meta-endpoint">{selectedStorage.endpoint || '-'}</span>
+                    {selectedStorage.region ? (
+                      <>
+                        <span className="meta-sep">·</span>
+                        <span>{selectedStorage.region}</span>
+                      </>
+                    ) : null}
+                  </p>
                 </div>
               </div>
               {renderBreadcrumbs()}

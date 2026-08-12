@@ -71,6 +71,8 @@ export function ObjectFileTable({
           const objectName = isFolder
             ? (item.name || item.relativePath || item.path || '').trim()
             : (item.key.split('/').filter(Boolean).pop() || item.key).trim();
+          const metaPath = (item.relativePath || item.path || '').replace(/\/+$/g, '');
+          const showMeta = Boolean(metaPath) && metaPath !== objectName;
           const isDropTarget = isFolder && dropTargetKey === item.key;
           return (
             <tr
@@ -125,7 +127,7 @@ export function ObjectFileTable({
                 <span className="object-name" title={item.key}>
                   {objectName}
                 </span>
-                <div className="object-meta">{item.relativePath || item.path}</div>
+                {showMeta ? <div className="object-meta">{metaPath}</div> : null}
               </td>
               <td>{isFolder ? '-' : formatSize(item.size)}</td>
               <td className="table-acl">
