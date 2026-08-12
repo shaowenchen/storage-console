@@ -1,0 +1,14 @@
+---
+description: After finishing code changes, commit and push without waiting to be asked
+alwaysApply: true
+---
+
+# Auto commit and push
+
+When you finish a set of meaningful code changes in this repo:
+
+1. **Commit** following the normal git safety protocol (status/diff/log, HEREDOC message, no secrets, no amend/force unless explicitly requested).
+2. **Push** to the tracked remote branch (`git push -u origin HEAD` when needed).
+3. Do this **without waiting** for the user to say “commit” or “push”, unless they explicitly ask not to, or the change is exploratory/WIP they asked to keep local.
+
+Skip empty commits. If hooks fail, fix and create a new commit, then push.
