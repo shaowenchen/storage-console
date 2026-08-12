@@ -381,6 +381,21 @@
   cursor: pointer;
 }
 
+.table-acl {
+  white-space: nowrap;
+  font-size: 0.85rem;
+}
+
+.acl-public {
+  color: var(--color-success);
+}
+
+.acl-private,
+.acl-na,
+.acl-pending {
+  color: var(--text-muted);
+}
+
 .file-row-actions {
   position: relative;
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { confirm, notify, notifyError } from '../../shared/components/AppNotice';
 import { ListRailHeader } from '../../shared/components/ListRailHeader';
@@ -29,10 +29,18 @@ import type { Storage, StorageFileItem } from './types';
 import './storages.css';
 
 const STORAGE_LIST_KEY = 'studio.storageListCollapsed';
+const ACL_HYDRATE_CONCURRENCY = 6;
 
 function listingKey(bucketId: string, prefix: string): string {
   return `storage:${bucketId}:${prefix || ''}`;
 }
+
+type ObjectAccessPatch = {
+  isPublic: boolean;
+  publicUrl?: string;
+  aclSupported?: boolean;
+  aclResolved?: boolean;
+};
 
 export function StoragesPage() {
   const [storages, setStorages] = useState<Storage[]>([]);
@@ -59,18 +67,73 @@ export function StoragesPage() {
     nextCursor: string | null;
     prefix: string;
   }>();
+  const aclHydrateGen = useRef(0);
 
   const selectedStorage = storages.find((s) => s.id === selectedId);
 
-  function updateItemAccess(key: string, access: { isPublic: boolean; publicUrl?: string }) {
-    setItems((prev) => prev.map((item) => (item.key === key ? { ...item, ...access } : item)));
-  }
+  const updateItemAccess = useCallback(
+    (key: string, access: ObjectAccessPatch) => {
+      setItems((prev) => {
+        const next = prev.map((item) =>
+          item.key === key
+            ? {
+                ...item,
+                isPublic: access.isPublic,
+                publicUrl: access.publicUrl,
+                aclSupported: access.aclSupported ?? item.aclSupported,
+                aclResolved: access.aclResolved ?? true,
+              }
+            : item,
+        );
+        if (selectedId) {
+          const cacheKey = listingKey(selectedId, prefix);
+          const cached = listingCache.get(cacheKey);
+          if (cached) {
+            listingCache.set(cacheKey, { ...cached, items: next });
+          }
+        }
+        return next;
+      });
+    },
+    [selectedId, prefix, listingCache],
+  );
+
+  const hydrateObjectAcls = useCallback(
+    async (bucketId: string, listed: StorageFileItem[]) => {
+      const pending = listed.filter((item) => item.type === 'file' && !item.aclResolved);
+      if (!pending.length) return;
+      const gen = ++aclHydrateGen.current;
+      let cursor = 0;
+      const worker = async () => {
+        while (cursor < pending.length) {
+          if (aclHydrateGen.current !== gen) return;
+          const item = pending[cursor++];
+          try {
+            const access = await getObjectAccess(bucketId, item.key);
+            if (aclHydrateGen.current !== gen) return;
+            updateItemAccess(item.key, { ...access, aclResolved: true });
+          } catch {
+            if (aclHydrateGen.current !== gen) return;
+            updateItemAccess(item.key, {
+              isPublic: false,
+              aclSupported: true,
+              aclResolved: true,
+            });
+          }
+        }
+      };
+      await Promise.all(
+        Array.from({ length: Math.min(ACL_HYDRATE_CONCURRENCY, pending.length) }, () => worker()),
+      );
+    },
+    [updateItemAccess],
+  );
 
   async function refreshItemAccess(key: string) {
     if (!selectedId) return;
     try {
       const access = await getObjectAccess(selectedId, key);
-      updateItemAccess(key, access);
+      updateItemAccess(key, { ...access, aclResolved: true });
     } catch {
       /* ignore ACL refresh errors */
     }
@@ -104,6 +167,7 @@ export function StoragesPage() {
         if (cached) {
           setItems(cached.items);
           setNextCursor(cached.nextCursor);
+          void hydrateObjectAcls(selectedId, cached.items);
           return;
         }
       }
@@ -123,6 +187,7 @@ export function StoragesPage() {
         );
         setItems(data.items);
         setNextCursor(data.nextCursor);
+        void hydrateObjectAcls(selectedId, data.items);
       } catch (err) {
         setItems([]);
         setNextCursor(null);
@@ -133,7 +198,7 @@ export function StoragesPage() {
         setLoadingFiles(false);
       }
     },
-    [selectedId, prefix, listingCache],
+    [selectedId, prefix, listingCache, hydrateObjectAcls],
   );
 
   useEffect(() => {
@@ -150,14 +215,18 @@ export function StoragesPage() {
     try {
       const data = await listStorageFiles(selectedId, prefix, nextCursor);
       const newItems = data.items || [];
-      setItems((prev) => [...prev, ...newItems]);
+      setItems((prev) => {
+        const merged = [...prev, ...newItems];
+        listingCache.set(listingKey(selectedId, prefix), {
+          items: merged,
+          nextCursor: data.nextCursor || null,
+          prefix,
+        });
+        return merged;
+      });
       const cursor = data.nextCursor || null;
       setNextCursor(cursor);
-      listingCache.set(listingKey(selectedId, prefix), {
-        items: [...items, ...newItems],
-        nextCursor: cursor,
-        prefix,
-      });
+      void hydrateObjectAcls(selectedId, newItems);
     } catch {
       notifyError('Failed to load more files');
     } finally {
@@ -291,7 +360,8 @@ export function StoragesPage() {
     try {
       await setObjectPublic(selectedId, key, isPrefix);
       listingCache.invalidate((k) => k.startsWith(`storage:${selectedId}:`));
-      if (!isPrefix) await refreshItemAccess(key);
+      if (isPrefix) await loadFiles(true);
+      else await refreshItemAccess(key);
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to set public');
     }
@@ -308,7 +378,8 @@ export function StoragesPage() {
     try {
       await setObjectPrivate(selectedId, key, isPrefix);
       listingCache.invalidate((k) => k.startsWith(`storage:${selectedId}:`));
-      if (!isPrefix) await refreshItemAccess(key);
+      if (isPrefix) await loadFiles(true);
+      else await refreshItemAccess(key);
     } catch (err) {
       notifyError(err instanceof Error ? err.message : 'Failed to set private');
     }

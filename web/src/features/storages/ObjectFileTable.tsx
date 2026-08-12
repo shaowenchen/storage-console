@@ -59,6 +59,7 @@ export function ObjectFileTable({
         <tr>
           <th>Object</th>
           <th>Size</th>
+          <th>ACL</th>
           <th>Modified</th>
           <th />
         </tr>
@@ -127,6 +128,19 @@ export function ObjectFileTable({
                 <div className="object-meta">{item.relativePath || item.path}</div>
               </td>
               <td>{isFolder ? '-' : formatSize(item.size)}</td>
+              <td className="table-acl">
+                {isFolder ? (
+                  '-'
+                ) : !item.aclResolved ? (
+                  <span className="acl-pending">…</span>
+                ) : item.aclSupported === false ? (
+                  <span className="acl-na">—</span>
+                ) : item.isPublic ? (
+                  <span className="acl-public">Public</span>
+                ) : (
+                  <span className="acl-private">Private</span>
+                )}
+              </td>
               <td className="table-date">{isFolder ? '-' : formatDate(item.createdAt)}</td>
               <td className="actions" onClick={(e) => e.stopPropagation()}>
                 <FileRowActions

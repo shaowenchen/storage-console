@@ -23,6 +23,10 @@ export type StorageFileItem = {
   source?: 's3';
   isPublic?: boolean;
   publicUrl?: string;
+  /** False when the provider/bucket does not support object ACLs. */
+  aclSupported?: boolean;
+  /** True after a GetObjectAcl probe finished for this row. */
+  aclResolved?: boolean;
   relativePath?: string;
   bucketId?: string;
 };
