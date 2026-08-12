@@ -466,6 +466,17 @@
 
 .file-table td.actions {
   text-align: right;
+  /* Menus are absolutely positioned; do not clip them to the cell. */
+  overflow: visible;
+}
+
+.file-table tbody tr.row-menu-open {
+  position: relative;
+  z-index: 5;
+}
+
+.file-table tbody tr.row-menu-open td.actions {
+  z-index: 6;
 }
 
 .acl-public {
@@ -486,7 +497,7 @@
   position: absolute;
   right: 0;
   top: calc(100% + 0.25rem);
-  z-index: 10;
+  z-index: 20;
   display: grid;
   gap: 0.2rem;
   min-width: 8.5rem;

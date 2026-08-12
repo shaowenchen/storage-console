@@ -106,6 +106,11 @@ export function FileRowActions({
         className="file-menu-btn"
         aria-label="File actions"
         aria-expanded={open}
+        draggable={false}
+        onMouseDown={(e) => {
+          // Keep HTML5 DnD on the name cell from swallowing the menu click.
+          e.stopPropagation();
+        }}
         onClick={(e) => {
           e.stopPropagation();
           onOpenMenuChange(open ? null : menuId);

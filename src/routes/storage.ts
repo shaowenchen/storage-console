@@ -9,6 +9,7 @@ import {
   ListObjectsV2Command,
   PutObjectCommand,
 } from '@aws-sdk/client-s3';
+import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   requireAdmin,
@@ -905,6 +906,99 @@ router.post(
     await setObjectAclForKeys(client, bucket, keys, 'private');
 
     res.json({ ok: true, key, objectCount: keys.length });
+  }),
+);
+
+/**
+ * Browser upload proxy: PUT object bytes through the console (same-origin), then
+ * server PutObject with stored credentials. Avoids bucket CORS on direct-to-S3 PUTs.
+ * CLI scripts continue to use /upload-links + presigned URLs.
+ */
+router.put(
+  '/:id/upload-object',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+
+    const relativePath = normalizeBucketPath(String(req.query.relativePath || ''));
+    const name = String(req.query.name || '')
+      .trim()
+      .replace(/^\/+|\/+$/g, '');
+    const contentType =
+      String(req.query.contentType || '').trim() ||
+      String(req.headers['content-type'] || '').trim() ||
+      'application/octet-stream';
+    const contentLength = Number(req.headers['content-length'] || 0);
+
+    if (!name) {
+      sendApiError(res, 400, 'File name is required');
+      return;
+    }
+    if (!Number.isFinite(contentLength) || contentLength < 0) {
+      sendApiError(res, 400, 'Content-Length is required');
+      return;
+    }
+    if (contentLength > MAX_UPLOAD_BYTES) {
+      sendApiError(
+        res,
+        400,
+        `File "${name}" exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`,
+      );
+      return;
+    }
+
+    const key = bucketObjectKey(bucket, relativePath, name);
+    const client = getS3Client(bucket);
+
+    log.info('Proxy uploading storage object', {
+      ...bucketLogMeta(bucket),
+      requestedBy: req.userKeyAuth!.user,
+      key,
+      contentType,
+      contentLength,
+    });
+
+    try {
+      const upload = new Upload({
+        client,
+        params: {
+          Bucket: bucket.bucketName,
+          Key: key,
+          Body: req,
+          ContentType: contentType,
+          ContentLength: contentLength,
+        },
+      });
+      await upload.done();
+    } catch (err: unknown) {
+      log.warn('Proxy storage upload failed', {
+        ...bucketLogMeta(bucket),
+        key,
+        ...s3ErrorLogMeta(err),
+      });
+      const formatted = formatS3RequestError(err, bucket);
+      sendApiError(
+        res,
+        formatted.status,
+        formatted.message,
+        'storage_upload_failed',
+        formatted.details,
+      );
+      return;
+    }
+
+    res.status(201).json({
+      ok: true,
+      key,
+      name,
+      size: contentLength,
+      contentType,
+      relativePath,
+    });
   }),
 );
 

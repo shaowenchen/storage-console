@@ -150,9 +150,11 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
       setTimeout(() => onClose(), 900);
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Upload failed';
+      const display = message === 'Upload cancelled' ? 'Upload cancelled' : `Upload failed: ${message}`;
+      setError(display);
       setProgress({
         percent: 0,
-        message: message === 'Upload cancelled' ? 'Upload cancelled' : `Upload failed: ${message}`,
+        message: display,
       });
     } finally {
       setUploading(false);

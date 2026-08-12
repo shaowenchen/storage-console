@@ -81,23 +81,17 @@ export function ObjectFileTable({
           const metaPath = (item.relativePath || item.path || '').replace(/\/+$/g, '');
           const showMeta = Boolean(metaPath) && metaPath !== objectName;
           const isDropTarget = isFolder && dropTargetKey === item.key;
+          const menuOpen = openMenuId === menuId;
           return (
             <tr
               key={item.key}
-              className={
-                isFolder
-                  ? `folder-row${isDropTarget ? ' folder-drop-target' : ''}`
-                  : 'file-row-draggable'
-              }
-              draggable={!isFolder}
-              onDragStart={
-                !isFolder
-                  ? (e) => {
-                      e.dataTransfer.setData(DRAG_OBJECT_KEY, item.key);
-                      e.dataTransfer.effectAllowed = 'move';
-                    }
-                  : undefined
-              }
+              className={[
+                isFolder ? 'folder-row' : 'file-row',
+                isDropTarget ? 'folder-drop-target' : '',
+                menuOpen ? 'row-menu-open' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
               onDragOver={
                 isFolder && onDropMove
                   ? (e) => {
@@ -128,7 +122,18 @@ export function ObjectFileTable({
               }
             >
               <td
-                className={isFolder ? 'object-cell clickable' : 'object-cell'}
+                className={
+                  isFolder ? 'object-cell clickable' : 'object-cell file-row-draggable'
+                }
+                draggable={!isFolder}
+                onDragStart={
+                  !isFolder
+                    ? (e) => {
+                        e.dataTransfer.setData(DRAG_OBJECT_KEY, item.key);
+                        e.dataTransfer.effectAllowed = 'move';
+                      }
+                    : undefined
+                }
                 onClick={isFolder ? () => onOpenFolder(item.relativePath || '') : undefined}
               >
                 <span className="object-name" title={item.key}>
