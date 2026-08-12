@@ -43,8 +43,9 @@
   border-radius: 999px;
   background: transparent;
   color: var(--text-muted);
-  font-size: 1.35rem;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
   padding: 0;
 }
@@ -52,6 +53,10 @@
 .app-notice-close:hover {
   background: var(--bg-ghost);
   color: var(--text-main);
+}
+
+.app-notice-close svg {
+  display: block;
 }
 
 .app-notice-error {
