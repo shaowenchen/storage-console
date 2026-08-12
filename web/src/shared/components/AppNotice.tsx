@@ -151,27 +151,40 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
             aria-labelledby="app-notice-title"
             onClick={(e) => e.stopPropagation()}
           >
-            <h2 id="app-notice-title">{noticeState.title}</h2>
+            <div className="app-notice-header">
+              <h2 id="app-notice-title">{noticeState.title}</h2>
+              <button
+                type="button"
+                className="app-notice-close"
+                aria-label="Close"
+                onClick={closeNotice}
+              >
+                ×
+              </button>
+            </div>
             {noticeParts.text ? <p className="app-notice-message">{noticeParts.text}</p> : null}
             {noticeParts.code ? (
               <div className="app-notice-code-block">
-                <div className="app-notice-code-top">
-                  <span className="app-notice-code-label">Command</span>
-                  <button
-                    type="button"
-                    className="ghost-btn app-notice-copy-btn"
-                    onClick={() => void copyNoticeCode()}
-                  >
-                    {codeCopied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
                 <pre className="app-notice-code">{noticeParts.code}</pre>
               </div>
             ) : null}
-            <div className="app-notice-actions">
-              <button type="button" className="primary" onClick={closeNotice}>
-                OK
-              </button>
+            <div
+              className={`app-notice-actions${noticeParts.code ? ' app-notice-actions-split' : ''}`}
+            >
+              {noticeParts.code ? (
+                <>
+                  <button type="button" className="ghost-btn" onClick={closeNotice}>
+                    Close
+                  </button>
+                  <button type="button" className="primary" onClick={() => void copyNoticeCode()}>
+                    {codeCopied ? 'Copied' : 'Copy'}
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="primary" onClick={closeNotice}>
+                  OK
+                </button>
+              )}
             </div>
           </div>
         </div>
