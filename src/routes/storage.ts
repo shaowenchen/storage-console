@@ -755,6 +755,7 @@ router.put(
 
     const client = getS3Client(bucket);
     let existingContentType: string | undefined;
+    let preserveAcl: 'public-read' | 'private' | null = null;
     try {
       const head = await client.send(
         new HeadObjectCommand({
@@ -777,6 +778,10 @@ router.put(
           'object_not_text',
         );
         return;
+      }
+      const access = await resolveObjectAccess(client, bucket, key);
+      if (access.aclSupported) {
+        preserveAcl = access.isPublic ? 'public-read' : 'private';
       }
     } catch (err) {
       if (!isS3NotFoundError(err)) {
@@ -809,13 +814,27 @@ router.put(
           ContentType: contentType,
         }),
       );
+      // PutObject resets canned ACL on many providers; restore prior Public/Private.
+      if (preserveAcl) {
+        try {
+          await setObjectCannedAcl(client, bucket, key, preserveAcl);
+        } catch (aclErr) {
+          log.warn('Saved object text but failed to restore ACL', {
+            ...bucketLogMeta(bucket),
+            key,
+            preserveAcl,
+            ...s3ErrorLogMeta(aclErr),
+          });
+        }
+      }
       log.info('Saved object text content', {
         ...bucketLogMeta(bucket),
         key,
         size,
         contentType,
+        preserveAcl,
       });
-      res.json({ ok: true, key, size, contentType });
+      res.json({ ok: true, key, size, contentType, acl: preserveAcl });
     } catch (err) {
       const formatted = formatS3RequestError(err, bucket);
       log.warn('Failed to save object text content', {
