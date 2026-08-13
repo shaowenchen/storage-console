@@ -5,6 +5,7 @@ COPY package.json package-lock.json ./
 COPY web/package.json web/package-lock.json ./web/
 COPY scripts ./scripts
 RUN apk add --no-cache python3 make g++
+ENV SKIP_WEB_POSTINSTALL=1
 RUN npm ci
 RUN npm --prefix web ci
 
