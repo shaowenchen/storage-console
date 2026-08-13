@@ -26,6 +26,15 @@ export type FailureResult = {
   lockDurationMs: number;
 };
 
+export type LoginAttemptView = {
+  ip: string;
+  failures: number;
+  locked: boolean;
+  retryAfterSeconds: number;
+  lockedUntil: number | null;
+  lastFailureAt: number;
+};
+
 /**
  * Lock duration for a given consecutive failure count.
  * failures < 3 → 0; 3 → 30s; 4 → 60s; 5 → 120s; … capped at 1h.
@@ -105,9 +114,30 @@ export class LoginThrottleStore {
     this.attempts.delete(ip);
   }
 
-  /** Test helper. */
+  /** Clear all tracked IPs (admin unlock). */
   clearAll(): void {
     this.attempts.clear();
+  }
+
+  /** Snapshot of tracked login attempts for the admin profile UI. */
+  listAttempts(now = Date.now()): LoginAttemptView[] {
+    const rows: LoginAttemptView[] = [];
+    for (const [ip, state] of this.attempts) {
+      const locked = state.lockedUntil > now;
+      rows.push({
+        ip,
+        failures: state.failures,
+        locked,
+        retryAfterSeconds: locked ? retryAfterSeconds(state.lockedUntil, now) : 0,
+        lockedUntil: locked ? state.lockedUntil : null,
+        lastFailureAt: state.lastFailureAt,
+      });
+    }
+    rows.sort((a, b) => {
+      if (a.locked !== b.locked) return a.locked ? -1 : 1;
+      return b.lastFailureAt - a.lastFailureAt;
+    });
+    return rows;
   }
 
   private prune(now: number): void {

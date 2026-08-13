@@ -133,4 +133,35 @@ router.post(
   }),
 );
 
+router.get(
+  '/profile/login-lock',
+  requireAuth,
+  asyncHandler(async (_req, res) => {
+    const attempts = loginThrottle.listAttempts();
+    const lockedCount = attempts.filter((row) => row.locked).length;
+    res.json({
+      locked: lockedCount > 0,
+      lockedCount,
+      attempts,
+    });
+  }),
+);
+
+router.post(
+  '/profile/login-lock/unlock',
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const ip = typeof req.body?.ip === 'string' ? req.body.ip.trim() : '';
+    if (ip) {
+      loginThrottle.clear(ip);
+      log.info('Cleared login throttle for IP', { ip, requestedBy: req.userKeyAuth!.user });
+      res.json({ ok: true, cleared: 'ip', ip });
+      return;
+    }
+    loginThrottle.clearAll();
+    log.info('Cleared all login throttle state', { requestedBy: req.userKeyAuth!.user });
+    res.json({ ok: true, cleared: 'all' });
+  }),
+);
+
 export default router;
