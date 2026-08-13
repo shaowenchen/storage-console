@@ -11,10 +11,10 @@ describe('attachmentContentDisposition', () => {
     );
   });
 
-  it('does not emit a second filename* parameter for ASCII', () => {
+  it('does not emit filename* alongside filename for ASCII', () => {
     const value = attachmentContentDisposition('readme.txt');
+    expect(value).toBe('attachment; filename="readme.txt"');
     expect(value).not.toMatch(/filename\*/);
-    expect(value).not.toContain('; filename=');
   });
 
   it('uses filename* only for non-ASCII names', () => {
