@@ -127,91 +127,10 @@
   min-width: 0;
 }
 
-.profile-value.muted {
-  color: var(--text-muted);
-}
-
 .profile-muted {
   color: var(--text-muted);
   font-size: 0.9rem;
   padding: 0.55rem 0 0.2rem;
-}
-
-.profile-row-lock {
-  align-items: start;
-}
-
-.profile-lock-value {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  min-width: 0;
-}
-
-.profile-lock-status {
-  display: grid;
-  gap: 0.2rem;
-  min-width: 0;
-}
-
-.profile-lock-badge {
-  font-size: 0.9rem;
-  font-weight: 650;
-}
-
-.profile-lock-badge.locked {
-  color: var(--color-danger, #ef4444);
-}
-
-.profile-lock-badge.unlocked {
-  color: var(--color-success, #22c55e);
-}
-
-.profile-lock-hint {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-  line-height: 1.35;
-}
-
-.profile-unlock-btn {
-  flex-shrink: 0;
-  font-size: 0.82rem;
-}
-
-.profile-lock-list {
-  display: grid;
-  gap: 0.4rem;
-  padding: 0 0 0.55rem;
-  border-top: 1px solid var(--bg-profile-row-border);
-  padding-top: 0.55rem;
-}
-
-.profile-lock-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding: 0.45rem 0.55rem;
-  border: 1px solid var(--border-soft);
-  border-radius: var(--radius-control);
-  background: var(--bg-soft, transparent);
-}
-
-.profile-lock-item-main {
-  display: grid;
-  gap: 0.15rem;
-  min-width: 0;
-}
-
-.profile-lock-ip {
-  font-size: 0.85rem;
-  color: var(--text-main);
-}
-
-.profile-lock-meta {
-  font-size: 0.78rem;
-  color: var(--text-muted);
 }
 
 .theme-preference-options {

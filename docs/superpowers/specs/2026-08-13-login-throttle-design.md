@@ -24,13 +24,6 @@ Protect `POST /api/auth/login` from credential stuffing / brute force with expon
 4. Wrong key → record failure; may become locked; return 401.
 5. Correct key → clear IP state; set session cookie.
 
-## Admin UI
-
-Profile → Account shows **Login lock** status (`Unlocked` / `Locked (N IPs)`), lists tracked IPs with failure/lock remaining, and **Unlock** / **Unlock all** via:
-
-- `GET /api/auth/profile/login-lock`
-- `POST /api/auth/profile/login-lock/unlock` body `{ ip? }`
-
 ## Follow-up
 
 - Persist attempts in SQLite/MySQL for multi-instance / restart durability.

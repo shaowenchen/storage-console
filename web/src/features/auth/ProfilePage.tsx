@@ -1,7 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { ApiKeysPanel } from './ApiKeysPanel';
-import { LoginLockPanel } from './LoginLockPanel';
 import { useTheme, type ThemePreference } from '../../app/theme';
 import './profile.css';
 
@@ -47,7 +46,6 @@ export function ProfilePage() {
             <div className="profile-label">Username</div>
             <div className="profile-value">{user}</div>
           </div>
-          <LoginLockPanel />
         </section>
 
         <section className="profile-section profile-section-keys">

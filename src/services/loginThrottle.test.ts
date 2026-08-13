@@ -68,18 +68,4 @@ describe('LoginThrottleStore', () => {
     expect(next.locked).toBe(false);
   });
 
-  it('lists attempts with locked entries first', () => {
-    const now = 1_000_000;
-    store.recordFailure('10.0.0.1', now);
-    store.recordFailure('10.0.0.2', now);
-    store.recordFailure('10.0.0.2', now);
-    store.recordFailure('10.0.0.2', now);
-
-    const rows = store.listAttempts(now);
-    expect(rows).toHaveLength(2);
-    expect(rows[0]?.ip).toBe('10.0.0.2');
-    expect(rows[0]?.locked).toBe(true);
-    expect(rows[1]?.ip).toBe('10.0.0.1');
-    expect(rows[1]?.locked).toBe(false);
-  });
 });
