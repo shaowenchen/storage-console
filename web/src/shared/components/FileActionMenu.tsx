@@ -9,6 +9,8 @@ type Props = {
   className?: string;
   style?: CSSProperties;
   menuRef?: Ref<HTMLDivElement>;
+  onPreview?: () => void;
+  onEdit?: () => void;
   onDownload?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
@@ -26,6 +28,8 @@ export function FileActionMenu({
   className = 'file-menu',
   style,
   menuRef,
+  onPreview,
+  onEdit,
   onDownload,
   onCopyLink,
   onCopyDownloadCli,
@@ -41,6 +45,16 @@ export function FileActionMenu({
       {!isFolder && onCopyLink ? (
         <button type="button" className="bucket-action" onClick={onCopyLink}>
           Copy Link
+        </button>
+      ) : null}
+      {!isFolder && onPreview ? (
+        <button type="button" className="bucket-action" onClick={onPreview}>
+          Preview
+        </button>
+      ) : null}
+      {!isFolder && onEdit ? (
+        <button type="button" className="bucket-action" onClick={onEdit}>
+          Edit
         </button>
       ) : null}
       {!isFolder && onDownload ? (

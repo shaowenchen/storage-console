@@ -29,7 +29,8 @@ export function createApp(): Express {
   const indexHtmlPath = join(publicDir, 'index.html');
   const app = express();
 
-  app.use(express.json());
+  // Allow text object PUT bodies up to ~1MB content plus JSON wrapper.
+  app.use(express.json({ limit: '2mb' }));
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

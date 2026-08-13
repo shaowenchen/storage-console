@@ -24,6 +24,8 @@ type Props = {
   publicUrl?: string;
   aclSupported?: boolean;
   aclResolved?: boolean;
+  onPreview?: () => void;
+  onEdit?: () => void;
   onDownload?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
@@ -33,7 +35,7 @@ type Props = {
   onDelete: () => void;
 };
 
-const MENU_ESTIMATED_HEIGHT = 220;
+const MENU_ESTIMATED_HEIGHT = 280;
 
 export function FileRowActions({
   menuId,
@@ -47,6 +49,8 @@ export function FileRowActions({
   publicUrl,
   aclSupported,
   aclResolved = false,
+  onPreview,
+  onEdit,
   onDownload,
   onCopyLink,
   onCopyDownloadCli,
@@ -153,6 +157,8 @@ export function FileRowActions({
             isFolder={isFolder}
             isPublic={displayPublic}
             showAclActions={showAclActions}
+            onPreview={onPreview ? withClose(onPreview) : undefined}
+            onEdit={onEdit ? withClose(onEdit) : undefined}
             onDownload={onDownload ? withClose(onDownload) : undefined}
             onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
             onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}

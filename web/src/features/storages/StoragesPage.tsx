@@ -24,6 +24,7 @@ import {
   testStorage,
 } from './api';
 import { ObjectFileTable } from './ObjectFileTable';
+import { ObjectTextModal, type ObjectTextMode } from './ObjectTextModal';
 import { StorageFormModal } from './StorageFormModal';
 import type { Storage, StorageFileItem } from './types';
 import './storages.css';
@@ -65,6 +66,9 @@ export function StoragesPage() {
     isPrefix: boolean;
     initialPath: string;
   } | null>(null);
+  const [textEditor, setTextEditor] = useState<{ key: string; mode: ObjectTextMode } | null>(
+    null,
+  );
 
   const listingCache = useListingCache<{
     items: StorageFileItem[];
@@ -610,6 +614,8 @@ export function StoragesPage() {
                   items={items}
                   pending={filesPending}
                   onOpenFolder={(relative) => setPrefix(relative)}
+                  onPreview={(key) => setTextEditor({ key, mode: 'preview' })}
+                  onEdit={(key) => setTextEditor({ key, mode: 'edit' })}
                   onDownload={(key) => void onDownload(key)}
                   onCopyLink={(item) => void onCopyLink(item)}
                   onCopyDownloadCli={(item) => void onCopyDownloadCli(item)}
@@ -672,6 +678,20 @@ export function StoragesPage() {
         onClose={() => setMoveTarget(null)}
         onConfirm={confirmMove}
       />
+
+      {selectedId && textEditor ? (
+        <ObjectTextModal
+          open
+          bucketId={selectedId}
+          objectKey={textEditor.key}
+          mode={textEditor.mode}
+          onClose={() => setTextEditor(null)}
+          onSaved={() => {
+            listingCache.invalidate((key) => key === listingKey(selectedId, prefix));
+            void loadFiles(true);
+          }}
+        />
+      ) : null}
     </div>
   );
 }

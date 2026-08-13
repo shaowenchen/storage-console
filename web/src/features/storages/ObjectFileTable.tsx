@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { StorageFileItem } from './types';
 import { FileRowActions } from '../../shared/components/FileRowActions';
 import { formatDate, formatSize } from '../../shared/format';
+import { looksLikeTextFileName } from './textFile';
 
 const DRAG_OBJECT_KEY = 'storage-console-object-key';
 
@@ -11,6 +12,8 @@ type Props = {
   /** When true and items are empty, render nothing instead of the empty-state panel. */
   pending?: boolean;
   onOpenFolder: (relativePrefix: string) => void;
+  onPreview: (key: string) => void;
+  onEdit: (key: string) => void;
   onDownload: (key: string) => void;
   onCopyLink: (item: StorageFileItem) => void;
   onCopyDownloadCli: (item: StorageFileItem) => void;
@@ -27,6 +30,8 @@ export function ObjectFileTable({
   items,
   pending = false,
   onOpenFolder,
+  onPreview,
+  onEdit,
   onDownload,
   onCopyLink,
   onCopyDownloadCli,
@@ -177,6 +182,16 @@ export function ObjectFileTable({
                   publicUrl={item.publicUrl}
                   aclSupported={item.aclSupported}
                   aclResolved={item.aclResolved}
+                  onPreview={
+                    !isFolder && looksLikeTextFileName(item.name || item.key)
+                      ? () => onPreview(item.key)
+                      : undefined
+                  }
+                  onEdit={
+                    !isFolder && looksLikeTextFileName(item.name || item.key)
+                      ? () => onEdit(item.key)
+                      : undefined
+                  }
                   onDownload={!isFolder ? () => onDownload(item.key) : undefined}
                   onCopyLink={!isFolder ? () => onCopyLink(item) : undefined}
                   onCopyDownloadCli={!isFolder ? () => onCopyDownloadCli(item) : undefined}

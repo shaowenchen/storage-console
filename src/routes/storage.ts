@@ -28,6 +28,12 @@ import {
 } from '../config/upload.js';
 import { createLogger } from '../utils/logger.js';
 import { directDownloadShellScript } from '../services/downloadScript.js';
+import {
+  gateObjectTextAccess,
+  guessTextContentType,
+  looksLikeTextObjectKey,
+  MAX_OBJECT_TEXT_BYTES,
+} from '../services/objectText.js';
 import { directUploadShellScript } from '../services/uploadScript.js';
 import {
   attachmentContentDisposition,
@@ -122,6 +128,50 @@ function formatS3ConnectionError(
 ): { error: string; details: string[] } {
   const formatted = formatS3RequestError(err, bucket);
   return { error: formatted.message, details: formatted.details };
+}
+
+function isS3NotFoundError(err: unknown): boolean {
+  const name = stringProp(err, 'name');
+  const code = stringProp(err, 'Code') || stringProp(err, 'code') || name;
+  const metadata =
+    err && typeof err === 'object'
+      ? ((err as { $metadata?: { httpStatusCode?: number } }).$metadata ?? undefined)
+      : undefined;
+  const status = metadata?.httpStatusCode;
+  return (
+    status === 404 ||
+    code === 'NotFound' ||
+    code === 'NoSuchKey' ||
+    code === 'NoSuchBucket' ||
+    name === 'NotFound' ||
+    name === 'NoSuchKey'
+  );
+}
+
+async function readS3BodyUtf8(body: unknown): Promise<string> {
+  if (!body) return '';
+  if (
+    typeof body === 'object' &&
+    body &&
+    typeof (body as { transformToString?: (encoding?: string) => Promise<string> })
+      .transformToString === 'function'
+  ) {
+    return (body as { transformToString: (encoding?: string) => Promise<string> }).transformToString(
+      'utf-8',
+    );
+  }
+  if (
+    typeof body === 'object' &&
+    body &&
+    typeof (body as { transformToByteArray?: () => Promise<Uint8Array> }).transformToByteArray ===
+      'function'
+  ) {
+    const bytes = await (
+      body as { transformToByteArray: () => Promise<Uint8Array> }
+    ).transformToByteArray();
+    return Buffer.from(bytes).toString('utf8');
+  }
+  throw new Error('Unsupported object body stream');
 }
 
 function maskSecretKey(secretKey: string): string {
@@ -578,6 +628,203 @@ router.get(
       aclSupported: access.aclSupported,
       publicUrl: access.publicUrl,
     });
+  }),
+);
+
+router.get(
+  '/:id/object-content',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+    const key = String(req.query.key || '').trim();
+    if (!key) {
+      sendApiError(res, 400, 'Object key is required');
+      return;
+    }
+
+    const client = getS3Client(bucket);
+    try {
+      const head = await client.send(
+        new HeadObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+        }),
+      );
+      const gate = gateObjectTextAccess({
+        key,
+        contentLength: head.ContentLength ?? 0,
+        contentType: head.ContentType,
+      });
+      if (!gate.ok) {
+        if (gate.reason === 'too_large') {
+          sendApiError(
+            res,
+            413,
+            `File exceeds ${MAX_OBJECT_TEXT_BYTES} bytes; use Download instead.`,
+            'object_too_large',
+          );
+          return;
+        }
+        sendApiError(
+          res,
+          400,
+          'This object is not editable as text. Use Download instead.',
+          'object_not_text',
+        );
+        return;
+      }
+
+      const object = await client.send(
+        new GetObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+        }),
+      );
+      const content = await readS3BodyUtf8(object.Body);
+      const contentType = head.ContentType || object.ContentType || guessTextContentType(key);
+      const size = Buffer.byteLength(content, 'utf8');
+      if (size > MAX_OBJECT_TEXT_BYTES) {
+        sendApiError(
+          res,
+          413,
+          `File exceeds ${MAX_OBJECT_TEXT_BYTES} bytes; use Download instead.`,
+          'object_too_large',
+        );
+        return;
+      }
+
+      log.info('Loaded object text content', {
+        ...bucketLogMeta(bucket),
+        key,
+        size,
+        contentType,
+      });
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.setHeader('X-Object-Content-Type', contentType);
+      res.setHeader('X-Object-Size', String(size));
+      res.send(content);
+    } catch (err) {
+      if (isS3NotFoundError(err)) {
+        sendApiError(res, 404, 'Object not found');
+        return;
+      }
+      const formatted = formatS3RequestError(err, bucket);
+      log.warn('Failed to load object text content', {
+        ...bucketLogMeta(bucket),
+        key,
+        ...s3ErrorLogMeta(err),
+      });
+      sendApiError(res, formatted.status, formatted.message, 'object_content_failed', formatted.details);
+    }
+  }),
+);
+
+router.put(
+  '/:id/object-content',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+    const key = String(req.body?.key || '').trim();
+    if (!key) {
+      sendApiError(res, 400, 'Object key is required');
+      return;
+    }
+    if (typeof req.body?.content !== 'string') {
+      sendApiError(res, 400, 'content must be a string');
+      return;
+    }
+    const content = req.body.content as string;
+    const size = Buffer.byteLength(content, 'utf8');
+    if (size > MAX_OBJECT_TEXT_BYTES) {
+      sendApiError(
+        res,
+        413,
+        `Content exceeds ${MAX_OBJECT_TEXT_BYTES} bytes; save a smaller file or use Upload.`,
+        'object_too_large',
+      );
+      return;
+    }
+
+    const client = getS3Client(bucket);
+    let existingContentType: string | undefined;
+    try {
+      const head = await client.send(
+        new HeadObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+        }),
+      );
+      existingContentType = head.ContentType || undefined;
+      const gate = gateObjectTextAccess({
+        key,
+        contentLength: Math.min(head.ContentLength ?? 0, size),
+        contentType: head.ContentType,
+      });
+      // Allow overwrite when key looks like text even if prior MIME was wrong.
+      if (!gate.ok && gate.reason === 'not_text' && !looksLikeTextObjectKey(key)) {
+        sendApiError(
+          res,
+          400,
+          'This object is not editable as text. Use Upload instead.',
+          'object_not_text',
+        );
+        return;
+      }
+    } catch (err) {
+      if (!isS3NotFoundError(err)) {
+        const formatted = formatS3RequestError(err, bucket);
+        sendApiError(res, formatted.status, formatted.message, 'object_content_failed', formatted.details);
+        return;
+      }
+      // Missing object: allow create/overwrite for text-like keys.
+      if (!looksLikeTextObjectKey(key)) {
+        sendApiError(
+          res,
+          400,
+          'This object is not editable as text. Use Upload instead.',
+          'object_not_text',
+        );
+        return;
+      }
+    }
+
+    const requestedType =
+      typeof req.body?.contentType === 'string' ? req.body.contentType.trim() : '';
+    const contentType = requestedType || existingContentType || guessTextContentType(key);
+
+    try {
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+          Body: content,
+          ContentType: contentType,
+        }),
+      );
+      log.info('Saved object text content', {
+        ...bucketLogMeta(bucket),
+        key,
+        size,
+        contentType,
+      });
+      res.json({ ok: true, key, size, contentType });
+    } catch (err) {
+      const formatted = formatS3RequestError(err, bucket);
+      log.warn('Failed to save object text content', {
+        ...bucketLogMeta(bucket),
+        key,
+        ...s3ErrorLogMeta(err),
+      });
+      sendApiError(res, formatted.status, formatted.message, 'object_content_failed', formatted.details);
+    }
   }),
 );
 

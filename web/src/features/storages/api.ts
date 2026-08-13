@@ -1,8 +1,54 @@
 import { apiFetch, parseJsonResponse } from '../../shared/api';
+import { formatApiError } from '../../shared/apiError';
 import type { Storage, StorageFilesResponse, StorageFormValues, StorageTestResult } from './types';
 
 async function parseJson<T>(res: Response): Promise<T> {
   return parseJsonResponse<T>(res);
+}
+
+export type ObjectTextContent = {
+  content: string;
+  contentType: string;
+  size: number;
+};
+
+export async function getObjectContent(
+  bucketId: string,
+  key: string,
+): Promise<ObjectTextContent> {
+  const params = new URLSearchParams({ key });
+  const res = await apiFetch(`/storages/${bucketId}/object-content?${params}`);
+  if (!res.ok) {
+    const text = await res.text();
+    let data: unknown = null;
+    if (text) {
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(
+          `Request failed (${res.status}): ${text.replace(/\s+/g, ' ').trim().slice(0, 160)}`,
+        );
+      }
+    }
+    throw new Error(formatApiError(data, res.statusText || 'Failed to load object'));
+  }
+  const content = await res.text();
+  return {
+    content,
+    contentType: res.headers.get('X-Object-Content-Type') || 'text/plain',
+    size: Number(res.headers.get('X-Object-Size') || content.length) || content.length,
+  };
+}
+
+export async function putObjectContent(
+  bucketId: string,
+  body: { key: string; content: string; contentType?: string },
+): Promise<{ ok: boolean; key: string; size: number; contentType: string }> {
+  const res = await apiFetch(`/storages/${bucketId}/object-content`, {
+    method: 'PUT',
+    body: JSON.stringify(body),
+  });
+  return parseJson(res);
 }
 
 export async function listStorages(): Promise<Storage[]> {

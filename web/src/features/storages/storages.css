@@ -691,3 +691,58 @@
   outline: 1px dashed var(--primary);
   outline-offset: -2px;
 }
+
+.object-text-modal {
+  width: min(48rem, 100%);
+  max-height: min(85vh, 52rem);
+  display: flex;
+  flex-direction: column;
+}
+
+.object-text-header h2 {
+  margin-bottom: 0.2rem;
+  word-break: break-all;
+}
+
+.object-text-meta {
+  margin: 0 0 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.object-text-error {
+  color: var(--color-danger);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
+  margin: 0 0 0.75rem;
+}
+
+.object-text-body {
+  flex: 1 1 auto;
+  min-height: 16rem;
+  max-height: min(56vh, 36rem);
+  overflow: auto;
+  margin: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--bg-input);
+  color: var(--text-main);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  line-height: 1.45;
+  padding: 0.75rem 0.85rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.object-text-editor {
+  resize: vertical;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.object-text-editor:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
