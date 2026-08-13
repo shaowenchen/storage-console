@@ -88,11 +88,23 @@ export function objectDisplayName(key: string): string {
   return last.trim();
 }
 
+/**
+ * Content-Disposition for S3 ResponseContentDisposition (query-encoded on the
+ * signed URL). Use a single filename parameter — emitting both `filename=` and
+ * `filename*` causes some providers/browsers to save names like
+ * `file.sh%3B filename%3DUTF-8%27%27file.sh`.
+ */
 export function attachmentContentDisposition(filename: string): string {
   const trimmed = filename.trim() || 'download';
-  const encoded = encodeURIComponent(trimmed);
-  // S3 presigned URLs URL-encode disposition; quoted filename="..." ends up as %22 in saved names.
-  return `attachment; filename=${encoded}; filename*=UTF-8''${encoded}`;
+  const sanitized = trimmed.replace(/[\r\n\\"]/g, '_');
+
+  // Printable ASCII without ';': quoted filename is enough and downloads cleanly.
+  if (/^[\x20-\x7E]+$/.test(sanitized) && !sanitized.includes(';')) {
+    return `attachment; filename="${sanitized}"`;
+  }
+
+  // Non-ASCII / special: RFC 5987 only (no companion filename=).
+  return `attachment; filename*=UTF-8''${encodeURIComponent(sanitized)}`;
 }
 
 export function encodeS3Key(key: string): string {
