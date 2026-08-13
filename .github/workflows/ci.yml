@@ -23,15 +23,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Match Dockerfile (node:22-alpine) and keep native deps (better-sqlite3) on a known LTS.
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
 
       - name: Install dependencies
+        env:
+          # Avoid postinstall `npm install` mutating web/; use lockfile installs instead.
+          SKIP_WEB_POSTINSTALL: '1'
         run: |
           npm ci
           npm --prefix web ci

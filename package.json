@@ -15,7 +15,8 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "build": "tsc && npm run web:build && rm -rf dist/public && mkdir -p dist/public && cp -R web/dist/. dist/public/",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "ci:check": "bash scripts/check-ci.sh"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1062.0",
@@ -44,6 +45,6 @@
     "vitest": "^3.0.0"
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
