@@ -93,6 +93,9 @@ jobs:
         with:
           context: .
           push: true
+          # ACR rejects Buildx provenance/SBOM attestations (empty OCI manifest class).
+          provenance: false
+          sbom: false
           platforms: ${{ github.event.inputs.platforms || 'linux/amd64' }}
           tags: |
             ${{ steps.image.outputs.dockerhub }}
