@@ -11,7 +11,7 @@ function shellQuote(value: string): string {
 
 /**
  * Bash+Python CLI that mints a short-lived signed GET URL then downloads
- * the object directly from the bucket (same pattern as getagents).
+ * the object directly from the bucket.
  */
 export function directDownloadShellScript(config: DirectDownloadScriptConfig): string {
   const defaultOutput = config.key.split('/').filter(Boolean).pop() || 'download.bin';

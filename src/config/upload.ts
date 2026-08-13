@@ -6,13 +6,13 @@ function numberFromEnv(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
-/** Presigned GET TTL (getagents-compatible env name). */
+/** Presigned GET TTL. */
 export const DOWNLOAD_LINK_EXPIRES_SECONDS = numberFromEnv(
   'S3_DIRECT_DOWNLOAD_EXPIRES_SECONDS',
   numberFromEnv('S3_DIRECT_UPLOAD_EXPIRES_SECONDS', DEFAULT_DIRECT_EXPIRES_SECONDS),
 );
 
-/** Presigned PUT TTL (getagents-compatible env name). */
+/** Presigned PUT TTL. */
 export const UPLOAD_LINK_EXPIRES_SECONDS = numberFromEnv(
   'S3_DIRECT_UPLOAD_EXPIRES_SECONDS',
   DEFAULT_DIRECT_EXPIRES_SECONDS,

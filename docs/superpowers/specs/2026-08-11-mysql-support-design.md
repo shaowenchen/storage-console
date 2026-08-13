@@ -12,7 +12,7 @@ Add MySQL 8+ (including TiDB Cloud / MySQL-protocol compatible clouds) alongside
 | Driver                        | `mysql2` (promise API), same as Studio                                                                  |
 | Data migration SQLite → MySQL | None (greenfield on MySQL)                                                                              |
 | TLS                           | DSN query `tls=skip-verify` → `ssl.rejectUnauthorized = false`; otherwise `true`                        |
-| Table prefix                  | None — use a **dedicated** database (do not share Studio’s DB; both create `buckets` / `storage_files`) |
+| Table prefix                  | None — use a **dedicated** database (do not share Studio’s DB; this app uses `buckets` / `auth_keys`) |
 | ORM                           | None — extend existing adapter                                                                          |
 
 ## Architecture

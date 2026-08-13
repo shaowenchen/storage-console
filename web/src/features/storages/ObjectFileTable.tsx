@@ -3,7 +3,7 @@ import type { StorageFileItem } from './types';
 import { FileRowActions } from '../../shared/components/FileRowActions';
 import { formatDate, formatSize } from '../../shared/format';
 
-const DRAG_OBJECT_KEY = 'studio-object-key';
+const DRAG_OBJECT_KEY = 'storage-console-object-key';
 
 type Props = {
   bucketId: string;

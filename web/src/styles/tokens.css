@@ -8,16 +8,13 @@
   --rail-header-margin: 0.35rem;
   --rail-toggle-size: 1.5rem;
   --rail-toggle-radius: 0.4rem;
-  --list-item-gap: 0.25rem;
   --list-item-padding: 0.4rem 0.5rem;
   --list-item-radius: 0.4rem;
   --list-item-margin: 0.1rem;
   --app-main-padding-y: 0.35rem;
   --app-main-padding-x: 0.35rem;
-  --list-meta-size: 0.72rem;
   --menu-button-size: 1.35rem;
   --menu-popover-min-width: 8.5rem;
-  --menu-popover-top: 2.65rem;
   --bg-page: #f4f7fb;
   --bg-panel: rgba(255, 255, 255, 0.92);
   --bg-soft: #f8fafc;
@@ -39,10 +36,8 @@
   --text-link: #2563eb;
   --color-danger: #dc2626;
   --color-success: #16a34a;
-  --border-card: rgba(229, 234, 243, 0.9);
   --bg-body-accent: rgba(37, 99, 235, 0.08);
   --bg-body-gradient-start: #f8fbff;
-  --bg-table-head: #f8fafc;
   --bg-table-row-hover: #fbfdff;
   --border-table: #e7e9f0;
   --bg-modal: rgba(255, 255, 255, 0.98);
@@ -52,21 +47,12 @@
   --text-chip: #334155;
   --bg-ghost: #f1f5f9;
   --bg-ghost-hover: #e2e8f0;
-  --bg-outline: #fff;
   --bg-rail: #f8fafc;
   --bg-workspace: #fff;
   --text-strong: #0f172a;
-  --text-body: #1f2937;
   --text-subtle: #6b7280;
-  --bg-empty: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
   --border-empty: #d7dbe7;
-  --bg-markdown-editor: #fcfdff;
-  --bg-markdown-preview: #fbfdff;
-  --bg-markdown-inline-code: #eef2f7;
-  --border-markdown: #d7dbe7;
-  --border-markdown-preview: #e2e8f0;
   --bg-popover: rgba(255, 255, 255, 0.98);
-  --bg-section-head: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
   --bg-profile-row-border: #eef2f7;
 }
 
@@ -88,10 +74,8 @@
   --text-link: #60a5fa;
   --color-danger: #f87171;
   --color-success: #4ade80;
-  --border-card: rgba(51, 65, 85, 0.9);
   --bg-body-accent: rgba(37, 99, 235, 0.12);
   --bg-body-gradient-start: #1e293b;
-  --bg-table-head: #1e293b;
   --bg-table-row-hover: rgba(51, 65, 85, 0.55);
   --border-table: #334155;
   --bg-modal: rgba(30, 41, 59, 0.98);
@@ -101,21 +85,12 @@
   --text-chip: #e2e8f0;
   --bg-ghost: #334155;
   --bg-ghost-hover: #475569;
-  --bg-outline: #1e293b;
   --bg-rail: #111827;
   --bg-workspace: #0b1220;
   --text-strong: #f1f5f9;
-  --text-body: #e2e8f0;
   --text-subtle: #94a3b8;
-  --bg-empty: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   --border-empty: #475569;
-  --bg-markdown-editor: #1e293b;
-  --bg-markdown-preview: #1e293b;
-  --bg-markdown-inline-code: #334155;
-  --border-markdown: #475569;
-  --border-markdown-preview: #475569;
   --bg-popover: rgba(30, 41, 59, 0.98);
-  --bg-section-head: linear-gradient(180deg, #1e293b 0%, #0f172a 100%);
   --bg-profile-row-border: #334155;
 }
 

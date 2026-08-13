@@ -52,9 +52,3 @@ export function redactUrl(url: string): string {
     return url;
   }
 }
-
-export function previewText(value: unknown, max = 120): string {
-  const text = typeof value === 'string' ? value : String(value ?? '');
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max)}…` : flat;
-}

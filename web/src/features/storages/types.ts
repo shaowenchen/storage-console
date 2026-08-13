@@ -19,8 +19,6 @@ export type StorageFileItem = {
   name: string;
   size?: number;
   createdAt?: number;
-  contentType?: string | null;
-  source?: 's3';
   isPublic?: boolean;
   publicUrl?: string;
   /** False when the provider/bucket does not support object ACLs. */

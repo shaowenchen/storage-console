@@ -26,8 +26,7 @@
   color: var(--text-strong);
 }
 
-.auth-subtitle,
-.auth-footer {
+.auth-subtitle {
   color: var(--text-muted);
   font-size: 0.92rem;
 }
@@ -45,8 +44,7 @@
   padding: 0.7rem 0.85rem;
 }
 
-.auth-panel button,
-.auth-modal button {
+.auth-panel button {
   border: 0;
   border-radius: var(--radius-control);
   background: var(--primary);
@@ -63,50 +61,4 @@
 .auth-error {
   color: var(--color-danger);
   font-size: 0.88rem;
-}
-
-.auth-footer a,
-.auth-panel a {
-  color: var(--text-link);
-}
-
-.auth-modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: var(--bg-modal-overlay);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 1rem;
-}
-
-.auth-modal {
-  width: min(32rem, 100%);
-  background: var(--bg-modal);
-  border-radius: var(--radius-card);
-  padding: 1.5rem;
-  display: flex;
-  flex-direction: column;
-  gap: 0.85rem;
-  box-shadow: var(--shadow-popover);
-}
-
-.auth-keys {
-  display: flex;
-  flex-direction: column;
-  gap: 0.65rem;
-}
-
-.auth-key-line {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.auth-key-line code {
-  word-break: break-all;
-  background: var(--bg-chip);
-  border: 1px solid var(--border-chip);
-  border-radius: 0.5rem;
-  padding: 0.45rem 0.6rem;
 }

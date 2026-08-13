@@ -105,11 +105,6 @@ export class LoginThrottleStore {
     this.attempts.delete(ip);
   }
 
-  /** Test helper. */
-  clearAll(): void {
-    this.attempts.clear();
-  }
-
   private prune(now: number): void {
     if (this.attempts.size < 500) return;
     for (const [ip, state] of this.attempts) {

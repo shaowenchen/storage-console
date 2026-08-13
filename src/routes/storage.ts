@@ -374,7 +374,7 @@ router.post(
     const startedAt = Date.now();
     const healthcheckKey = bucketObjectKey(
       effectiveBucket,
-      '.studio-healthcheck',
+      '.storage-console-healthcheck',
       `${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
     );
     let uploaded = false;
@@ -457,15 +457,11 @@ router.get(
     const listPrefix = prefix ? `${prefix}/` : '';
     const items: Array<{
       type: 'folder' | 'file';
-      id?: string;
       key: string;
       path: string;
       name: string;
       size?: number;
-      username?: string;
       createdAt?: number;
-      contentType?: string | null;
-      source?: 's3' | 'studio';
       isPublic?: boolean;
       publicUrl?: string;
       relativePath?: string;
@@ -510,8 +506,6 @@ router.get(
           name: objectDisplayName(key),
           size: object.Size || 0,
           createdAt: object.LastModified?.getTime() || 0,
-          contentType: null,
-          source: 's3' as const,
           isPublic: publicAcl,
           publicUrl: publicAcl ? publicObjectUrl(bucket, key) : undefined,
         };

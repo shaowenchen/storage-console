@@ -28,7 +28,8 @@ import { StorageFormModal } from './StorageFormModal';
 import type { Storage, StorageFileItem } from './types';
 import './storages.css';
 
-const STORAGE_LIST_KEY = 'studio.storageListCollapsed';
+const STORAGE_LIST_KEY = 'storageConsole.storageListCollapsed';
+const LEGACY_STORAGE_LIST_KEY = 'studio.storageListCollapsed';
 const ACL_HYDRATE_CONCURRENCY = 6;
 
 function listingKey(bucketId: string, prefix: string): string {
@@ -51,7 +52,10 @@ export function StoragesPage() {
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [filesPending, setFilesPending] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
-  const { collapsed, toggleCollapsed } = useRailCollapsed(STORAGE_LIST_KEY);
+  const { collapsed, toggleCollapsed } = useRailCollapsed(
+    STORAGE_LIST_KEY,
+    LEGACY_STORAGE_LIST_KEY,
+  );
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [railMenuOpen, setRailMenuOpen] = useState(false);
   const [modalStorage, setModalStorage] = useState<Storage | null | 'new'>(null);

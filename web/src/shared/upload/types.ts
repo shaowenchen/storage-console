@@ -32,15 +32,6 @@ export type StorageUploadContext = {
   relativePath?: string;
 };
 
-export type ProjectUploadContext = {
-  mode: 'project';
-  projectId: string;
-  documentId?: string;
-  directoryId?: string;
-};
-
-export type UploadContext = StorageUploadContext | ProjectUploadContext;
-
 export type UploadProgress = {
   percent: number;
   message: string;

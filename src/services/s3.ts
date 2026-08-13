@@ -320,14 +320,6 @@ export function clearS3Client(bucketId: string): void {
   }
 }
 
-export function clearAllS3ClientsForTests(): void {
-  for (const [key, client] of s3Clients) {
-    client.destroy();
-    s3Clients.delete(key);
-    log.debug('Cleared cached S3 client', { cacheKey: key });
-  }
-}
-
 export type ObjectAccessResult = {
   isPublic: boolean;
   /** False when the provider/bucket does not support object ACLs. */

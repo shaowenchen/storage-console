@@ -10,7 +10,7 @@ function shellQuote(value: string): string {
 
 /**
  * Bash+Python CLI that mints a presigned PUT URL then uploads the file
- * directly to the object store (same pattern as getagents).
+ * directly to the object store.
  */
 export function directUploadShellScript(config: DirectUploadScriptConfig): string {
   return `set -euo pipefail
