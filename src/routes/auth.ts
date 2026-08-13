@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/asyncHandler.js';
 import { requireAuth } from '../middleware/adminAuth.js';
@@ -5,23 +6,66 @@ import { clearSessionCookie, readSession, setSessionCookie } from '../middleware
 import { getAdminUserKey, getDownloadKey, getUploadKey } from '../config/env.js';
 import { sendApiError } from '../domain/apiError.js';
 import { rotateCachedAuthKey } from '../services/authKeyStore.js';
+import { getClientIp, loginThrottle } from '../services/loginThrottle.js';
+import { createLogger } from '../utils/logger.js';
 
 const router = Router();
+const log = createLogger('auth');
+
+function safeEqualString(a: string, b: string): boolean {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
 
 router.post(
   '/login',
   asyncHandler(async (req, res) => {
+    const ip = getClientIp(req);
+    const lock = loginThrottle.getLockStatus(ip);
+    if (lock.locked) {
+      res.setHeader('Retry-After', String(lock.retryAfterSeconds));
+      sendApiError(
+        res,
+        429,
+        `Too many failed login attempts. Try again in ${lock.retryAfterSeconds} second(s).`,
+        'login_locked',
+        [`retryAfterSeconds=${lock.retryAfterSeconds}`],
+      );
+      return;
+    }
+
     const key = typeof req.body?.key === 'string' ? req.body.key.trim() : '';
     if (!key) {
       sendApiError(res, 400, 'Login key is required');
       return;
     }
 
-    if (key !== getAdminUserKey()) {
+    if (!safeEqualString(key, getAdminUserKey())) {
+      const failure = loginThrottle.recordFailure(ip);
+      log.warn('Login failed', {
+        ip,
+        failures: failure.failures,
+        locked: failure.locked,
+        retryAfterSeconds: failure.retryAfterSeconds,
+      });
+      if (failure.locked) {
+        res.setHeader('Retry-After', String(failure.retryAfterSeconds));
+        sendApiError(
+          res,
+          429,
+          `Too many failed login attempts. Try again in ${failure.retryAfterSeconds} second(s).`,
+          'login_locked',
+          [`retryAfterSeconds=${failure.retryAfterSeconds}`],
+        );
+        return;
+      }
       sendApiError(res, 401, 'Invalid login key');
       return;
     }
 
+    loginThrottle.clear(ip);
     setSessionCookie(res, {
       userId: 'admin',
       user: 'admin',
