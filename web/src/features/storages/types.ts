@@ -49,4 +49,6 @@ export type StorageFormValues = {
 export type StorageTestResult = {
   ok: boolean;
   message?: string;
+  /** False when the connection works but the credentials cannot write probe objects. */
+  writeVerified?: boolean;
 };

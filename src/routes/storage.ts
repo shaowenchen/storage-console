@@ -428,7 +428,7 @@ router.post(
       `${Date.now()}-${Math.random().toString(36).slice(2)}.txt`,
     );
     let uploaded = false;
-    log.info('Testing storage read/write connection', {
+    log.info('Testing storage connection', {
       ...bucketLogMeta(effectiveBucket),
       key: healthcheckKey,
       usingUnsavedConfig:
@@ -436,6 +436,39 @@ router.post(
         JSON.stringify(serializeBucket(bucket)),
       secretKeySource: secretFromStored ? 'stored' : 'request',
     });
+
+    // Read probe first: listing the bucket is what browsing the console needs.
+    // A read-only key fails the old write-only probe yet works perfectly for
+    // browsing, so only hard-fail when read access is denied.
+    try {
+      await client.send(
+        new ListObjectsV2Command({
+          Bucket: effectiveBucket.bucketName,
+          Prefix: bucketListPrefix(effectiveBucket) || undefined,
+          MaxKeys: 1,
+        }),
+      );
+    } catch (err: unknown) {
+      log.warn('Storage bucket connection failed (read probe)', {
+        ...bucketLogMeta(effectiveBucket),
+        key: healthcheckKey,
+        durationMs: Date.now() - startedAt,
+        ...s3ErrorLogMeta(err),
+      });
+      const formatted = formatS3ConnectionError(err, effectiveBucket);
+      const details = [
+        `Healthcheck key: ${healthcheckKey}`,
+        `Secret key source: ${secretFromStored ? 'stored' : 'request'}`,
+        ...formatted.details,
+      ];
+      sendApiError(res, 400, formatted.error, 'storage_connection_failed', details);
+      client.destroy();
+      return;
+    }
+
+    // Write probe (optional): PUT + DELETE a healthcheck object. A read-only
+    // key is still usable for browsing, so a write denial is reported as a
+    // warning instead of failing the connection test.
     try {
       await client.send(
         new PutObjectCommand({
@@ -464,9 +497,9 @@ router.post(
         key: healthcheckKey,
         durationMs: Date.now() - startedAt,
       });
-      res.json({ ok: true });
+      res.json({ ok: true, writeVerified: true });
     } catch (err: unknown) {
-      log.warn('Storage bucket read/write connection failed', {
+      log.warn('Storage bucket connection read-only (write probe denied)', {
         ...bucketLogMeta(effectiveBucket),
         key: healthcheckKey,
         uploadedBeforeFailure: uploaded,
@@ -474,13 +507,11 @@ router.post(
         ...s3ErrorLogMeta(err),
       });
       const formatted = formatS3ConnectionError(err, effectiveBucket);
-      const details = [
-        `Healthcheck key: ${healthcheckKey}`,
-        `Uploaded before failure: ${uploaded ? 'yes' : 'no'}`,
-        `Secret key source: ${secretFromStored ? 'stored' : 'request'}`,
-        ...formatted.details,
-      ];
-      sendApiError(res, 400, formatted.error, 'storage_connection_failed', details);
+      res.json({
+        ok: true,
+        writeVerified: false,
+        message: `Connected (read-only): browsing works, but writing test objects is not permitted (${formatted.error}). Uploads may be unavailable.`,
+      });
     } finally {
       client.destroy();
     }

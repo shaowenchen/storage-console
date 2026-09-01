@@ -36,6 +36,7 @@
   --text-link: #2563eb;
   --color-danger: #dc2626;
   --color-success: #16a34a;
+  --color-warning: #b45309;
   --bg-body-accent: rgba(37, 99, 235, 0.08);
   --bg-body-gradient-start: #f8fbff;
   --bg-table-row-hover: #fbfdff;
@@ -74,6 +75,7 @@
   --text-link: #60a5fa;
   --color-danger: #f87171;
   --color-success: #4ade80;
+  --color-warning: #fbbf24;
   --bg-body-accent: rgba(37, 99, 235, 0.12);
   --bg-body-gradient-start: #1e293b;
   --bg-table-row-hover: rgba(51, 65, 85, 0.55);

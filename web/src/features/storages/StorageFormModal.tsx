@@ -226,7 +226,15 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
         </div>
         {error ? <p className="form-error">{error}</p> : null}
         {testResult ? (
-          <div className={testResult.ok ? 'test-result success' : 'test-result error'}>
+          <div
+            className={
+              !testResult.ok
+                ? 'test-result error'
+                : testResult.writeVerified === false
+                  ? 'test-result warning'
+                  : 'test-result success'
+            }
+          >
             <p>
               {testResult.ok
                 ? testResult.message || 'Connection successful'
@@ -236,6 +244,11 @@ export function StorageFormModal({ open, storage, onClose, onSaved }: Props) {
               <p className="muted field-hint">
                 Check endpoint URL, region, access key, secret key, and bucket name. Run Test
                 Connection before saving.
+              </p>
+            ) : testResult.writeVerified === false ? (
+              <p className="muted field-hint">
+                Read-only connection: you can browse files, but this credential cannot write to the
+                bucket. Uploads, edits, and deletes may fail until a write-enabled key is configured.
               </p>
             ) : null}
           </div>
