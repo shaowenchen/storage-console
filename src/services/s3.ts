@@ -90,21 +90,26 @@ export function objectDisplayName(key: string): string {
 
 /**
  * Content-Disposition for S3 ResponseContentDisposition (query-encoded on the
- * signed URL). Use a single filename parameter — emitting both `filename=` and
- * `filename*` causes some providers/browsers to save names like
- * `file.sh%3B filename%3DUTF-8%27%27file.sh`.
+ * signed URL). Two rules, both learned the hard way with S3-compatible stores
+ * that pass the header through without normalising it:
+ *
+ * - Emit a single filename parameter. Emitting both `filename=` and `filename*`
+ *   makes them save names like `file.sh%3B filename%3DUTF-8%27%27file.sh`.
+ * - Never quote the token. A quoted `filename="x"` reaches the store as
+ *   `filename=%22x%22` and saves as `%22x%22`. A bare token survives as-is;
+ *   anything outside the RFC 6266 token charset goes through `filename*`.
  */
 export function attachmentContentDisposition(filename: string): string {
   const trimmed = filename.trim() || 'download';
   const sanitized = trimmed.replace(/[\r\n\\"]/g, '_');
 
-  // Printable ASCII without ';': quoted filename is enough and downloads cleanly.
-  if (/^[\x20-\x7E]+$/.test(sanitized) && !sanitized.includes(';')) {
-    return `attachment; filename="${sanitized}"`;
-  }
+  // Printable ASCII that is a valid RFC 6266 token: use it verbatim.
+  const isPlainToken = /^[A-Za-z0-9!#$&+\-.^_`|~]+$/.test(sanitized);
 
-  // Non-ASCII / special: RFC 5987 only (no companion filename=).
-  return `attachment; filename*=UTF-8''${encodeURIComponent(sanitized)}`;
+  // Everything else (spaces, `;`, non-ASCII): RFC 5987 only (no companion filename=).
+  return isPlainToken
+    ? `attachment; filename=${sanitized}`
+    : `attachment; filename*=UTF-8''${encodeURIComponent(sanitized)}`;
 }
 
 export function encodeS3Key(key: string): string {
