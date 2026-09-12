@@ -5,6 +5,7 @@ import { dirname, join } from 'path';
 import { existsSync, readFileSync } from 'fs';
 import authRouter from './routes/auth.js';
 import storageRouter from './routes/storage.js';
+import { jsonBodyParser } from './middleware/jsonBodyParser.js';
 import { createLogger } from './utils/logger.js';
 
 const log = createLogger('server');
@@ -30,7 +31,8 @@ export function createApp(): Express {
   const app = express();
 
   // Allow text object PUT bodies up to ~1MB content plus JSON wrapper.
-  app.use(express.json({ limit: '2mb' }));
+  // Raw object uploads pass through untouched so the upload route can stream them.
+  app.use(jsonBodyParser());
 
   app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
