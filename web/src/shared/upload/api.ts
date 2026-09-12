@@ -1,8 +1,17 @@
 import { apiFetch, apiUrl, parseJsonResponse } from '../api';
-import type { CompletedUpload, UploadFileMeta, UploadLinksResponse } from './types';
+import type { CompletedUpload, UploadFileMeta, UploadLimits, UploadLinksResponse } from './types';
 
 async function parseJson<T>(res: Response): Promise<T> {
   return parseJsonResponse<T>(res);
+}
+
+export async function fetchUploadLimits(): Promise<UploadLimits> {
+  const res = await apiFetch('/storages/upload-limits');
+  const data = await parseJson<Partial<UploadLimits>>(res);
+  return {
+    maxFiles: Number(data.maxFiles) || 0,
+    maxBytes: Number(data.maxBytes) || 0,
+  };
 }
 
 export async function createStorageUploadLinks(

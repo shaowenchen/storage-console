@@ -1201,6 +1201,25 @@ router.post(
 );
 
 /**
+ * Upload constraints, so the browser checks them before it starts rather than
+ * after. Without this the UI could only learn the limits by exceeding one — and
+ * the file-count limit is only enforced at finalize, by which point every file
+ * has already been written to the bucket and the batch still fails as a whole.
+ *
+ * Must stay above the `/:id` routes so the literal path is not read as an id.
+ */
+router.get(
+  '/upload-limits',
+  requireAdmin,
+  asyncHandler(async (_req, res) => {
+    res.json({
+      maxFiles: MAX_UPLOAD_FILES,
+      maxBytes: MAX_UPLOAD_BYTES,
+    });
+  }),
+);
+
+/**
  * Browser upload proxy: PUT object bytes through the console (same-origin), then
  * server PutObject with stored credentials. Avoids bucket CORS on direct-to-S3 PUTs.
  * CLI scripts continue to use /upload-links + presigned URLs.

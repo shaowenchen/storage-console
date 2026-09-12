@@ -1,10 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { notify, notifyError } from './AppNotice';
 import type { Storage } from '../../features/storages/types';
-import { copyToClipboard } from '../format';
-import { getUploadKey, storageUploadScriptUrl } from '../upload/api';
-import { normalizeRelativePath, uploadRunCommand, uploadTargetPath } from '../upload/helpers';
+import { copyToClipboard, formatSize } from '../format';
+import { fetchUploadLimits, getUploadKey, storageUploadScriptUrl } from '../upload/api';
+import {
+  normalizeRelativePath,
+  uploadRunCommand,
+  uploadTargetPath,
+  validateUploadSelection,
+} from '../upload/helpers';
 import { runUpload } from '../upload/runUpload';
+import type { UploadLimits } from '../upload/types';
 import './upload.css';
 
 function storageOptionLabel(storage: Storage): string {
@@ -36,11 +42,17 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
   const [scriptExpanded, setScriptExpanded] = useState(false);
   const [uploadKey, setUploadKey] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[] | null>(null);
+  const [limits, setLimits] = useState<UploadLimits | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const selectedBucket = storages.find((s) => s.id === bucketId);
   const targetPreview = uploadTargetPath(selectedBucket, relativePath);
+
+  /** The limits note doubles as the rule the server would apply at finalize. */
+  const limitsNote = limits
+    ? `Up to ${limits.maxFiles} files per upload, ${formatSize(limits.maxBytes)} per file.`
+    : '';
 
   const scriptEndpoint = useMemo(() => {
     if (!config || !bucketId) return '';
@@ -77,6 +89,23 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
       cancelled = true;
     };
   }, [open, scriptExpanded, bucketId, relativePath, config]);
+
+  // Fetched once per open so the note reflects the server's real config rather
+  // than a hard-coded copy that could drift from it.
+  useEffect(() => {
+    if (!open || !config) return;
+    let cancelled = false;
+    fetchUploadLimits()
+      .then((value) => {
+        if (!cancelled) setLimits(value);
+      })
+      .catch(() => {
+        if (!cancelled) setLimits(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, config]);
 
   function handleClose() {
     if (uploading) {
@@ -122,8 +151,13 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
       setError('Choose a storage');
       return;
     }
-    if (!files.length) {
-      setError('Choose at least one file');
+
+    // Checked before the first byte goes out. The server's file-count limit is
+    // applied at finalize, so without this an oversized batch would upload
+    // every file and then fail as a whole.
+    const invalid = validateUploadSelection(files, limits);
+    if (invalid) {
+      setError(invalid);
       return;
     }
 
@@ -160,7 +194,7 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
       setUploading(false);
       abortRef.current = null;
     }
-  }, [config, pendingFiles, bucketId, relativePath, onComplete, onClose]);
+  }, [config, pendingFiles, bucketId, relativePath, limits, onComplete, onClose]);
 
   if (!open || !config) return null;
 
@@ -225,6 +259,7 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
             disabled={uploading}
             onChange={() => setPendingFiles(null)}
           />
+          {limitsNote ? <p className="upload-limits-note">{limitsNote}</p> : null}
         </div>
 
         <div className={`upload-script-card${scriptExpanded ? ' expanded' : ''}`}>

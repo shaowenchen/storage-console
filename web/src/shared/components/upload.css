@@ -295,3 +295,9 @@
   overflow-wrap: anywhere;
   white-space: pre-wrap;
 }
+
+.upload-limits-note {
+  margin: 0.35rem 0 0;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}

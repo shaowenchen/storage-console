@@ -36,3 +36,9 @@ export type UploadProgress = {
   percent: number;
   message: string;
 };
+
+/** Server-side upload constraints (see GET /storages/upload-limits). */
+export type UploadLimits = {
+  maxFiles: number;
+  maxBytes: number;
+};

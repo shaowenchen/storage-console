@@ -1,4 +1,4 @@
-const DEFAULT_MAX_UPLOAD_MB = 500;
+const DEFAULT_MAX_UPLOAD_MB = 1024;
 const DEFAULT_DIRECT_EXPIRES_SECONDS = 900;
 
 function numberFromEnv(name: string, fallback: number): number {
