@@ -3,12 +3,20 @@ import { createApp } from './createApp.js';
 import { createLogger } from './utils/logger.js';
 import { validateProductionConfig, getPort, getHost } from './config/env.js';
 import { bootstrapAuthKeys } from './services/authKeyStore.js';
+import { sweepAbandonedSpools } from './services/uploadSpool.js';
 
 const log = createLogger('server');
 
 async function start() {
   validateProductionConfig();
   await bootstrapAuthKeys();
+  // Parts spooled by a process that was killed outright have no one left to
+  // remove them, so each new process reclaims what an earlier one left behind.
+  await sweepAbandonedSpools().catch((error: unknown) => {
+    log.warn('Failed to sweep abandoned upload spools', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  });
   const app = createApp();
   const port = getPort();
   const host = getHost();

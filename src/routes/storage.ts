@@ -1,13 +1,19 @@
 import { Router } from 'express';
+import { createReadStream } from 'fs';
 import { sendApiError } from '../domain/apiError.js';
 import {
+  AbortMultipartUploadCommand,
+  CompleteMultipartUploadCommand,
   CopyObjectCommand,
+  CreateMultipartUploadCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
   HeadObjectCommand,
   DeleteObjectCommand,
   ListObjectsV2Command,
   PutObjectCommand,
+  UploadPartCommand,
+  type S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
@@ -20,13 +26,18 @@ import { asyncHandler } from '../middleware/asyncHandler.js';
 import { mapWithConcurrency, createGate } from '../lib/concurrency.js';
 import {
   DOWNLOAD_LINK_EXPIRES_SECONDS,
+  MAX_CONCURRENT_UPLOAD_PARTS,
   MAX_CONCURRENT_UPLOADS,
+  MAX_QUEUED_UPLOAD_PARTS,
   MAX_QUEUED_UPLOADS,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_FILES,
   S3_CONCURRENCY,
   S3_PRESIGN_UNSIGNABLE_HEADERS,
   UPLOAD_LINK_EXPIRES_SECONDS,
+  UPLOAD_MAX_PARTS,
+  UPLOAD_PART_SIZE_BYTES,
+  UPLOAD_PART_UPLOAD_ATTEMPTS,
 } from '../config/upload.js';
 import { createLogger } from '../utils/logger.js';
 import { directDownloadShellScript } from '../services/downloadScript.js';
@@ -37,6 +48,13 @@ import {
   MAX_OBJECT_TEXT_BYTES,
 } from '../services/objectText.js';
 import { directUploadShellScript } from '../services/uploadScript.js';
+import {
+  createSessionToken,
+  expectedPartLength,
+  parseSessionToken,
+  sessionPartCount,
+} from '../services/multipartUpload.js';
+import { withSpooled } from '../services/uploadSpool.js';
 import {
   attachmentContentDisposition,
   bucketListPrefix,
@@ -1233,6 +1251,18 @@ router.get(
 const uploadGate = createGate(MAX_CONCURRENT_UPLOADS, MAX_QUEUED_UPLOADS);
 
 /**
+ * Chunked upload part bodies processed at once.
+ *
+ * Separate from {@link uploadGate} and sized much larger: a part is a bounded
+ * few megabytes finished in seconds, where a whole-file request could stream a
+ * gigabyte. Sharing one small gate would let a single browser — which opens a
+ * few parts at once by design — consume the whole allowance and starve every
+ * other uploader. The starting call keeps using `uploadGate`, since it does the
+ * same unbounded-ish work a whole-file PUT did.
+ */
+const uploadPartGate = createGate(MAX_CONCURRENT_UPLOAD_PARTS, MAX_QUEUED_UPLOAD_PARTS);
+
+/**
  * Browser upload proxy: PUT object bytes through the console (same-origin), then
  * server PutObject with stored credentials. Avoids bucket CORS on direct-to-S3 PUTs.
  * CLI scripts continue to use /upload-links + presigned URLs.
@@ -1350,6 +1380,711 @@ router.put(
       contentType,
       relativePath,
     });
+  }),
+);
+
+/**
+ * A part whose length disagreed with the length the session requires.
+ *
+ * Distinct from a storage failure because it is the client's mistake: re-sending
+ * the same bytes would fail identically, so it must not be reported as something
+ * worth retrying.
+ */
+class PartLengthError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'PartLengthError';
+  }
+}
+
+/**
+ * Send a spooled part to the storage, retrying transient failures here.
+ *
+ * The SDK does not retry a request whose body is a stream or a file — it cannot
+ * know the body is replayable — so a retry is the caller's job, and having a file
+ * on disk is what makes it possible. Only failures the storage itself calls
+ * transient are retried: re-sending a part it rejected as malformed would just
+ * fail again more slowly.
+ */
+async function uploadPartWithRetry(
+  client: S3Client,
+  bucket: Bucket,
+  session: { key: string; uploadId: string },
+  partNumber: number,
+  filePath: string,
+  bytes: number,
+  abortSignal: AbortSignal,
+) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await client.send(
+        new UploadPartCommand({
+          Bucket: bucket.bucketName,
+          Key: session.key,
+          UploadId: session.uploadId,
+          PartNumber: partNumber,
+          Body: createReadStream(filePath),
+          ContentLength: bytes,
+        }),
+        { abortSignal },
+      );
+    } catch (err: unknown) {
+      // A part that no longer exists is not worth retrying, and neither is one
+      // the storage rejected on its merits.
+      if (isUploadGoneError(err) || !isRetryableS3Error(err)) throw err;
+      if (attempt >= UPLOAD_PART_UPLOAD_ATTEMPTS - 1) throw err;
+      if (abortSignal.aborted) throw err;
+
+      const waitMs = Math.min(500 * 2 ** attempt, 5000);
+      log.warn('Retrying multipart part upload', {
+        ...bucketLogMeta(bucket),
+        key: session.key,
+        partNumber,
+        attempt: attempt + 1,
+        waitMs,
+        ...s3ErrorLogMeta(err),
+      });
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+    }
+  }
+}
+
+/**
+ * Whether the storage says this multipart upload no longer exists.
+ *
+ * Ambiguous on its own, and deliberately not treated as failure anywhere: an
+ * upload is gone either because it was already completed (and only the reply was
+ * lost) or because it was aborted or aged out. The caller decides by looking at
+ * whether the object is actually there.
+ */
+function isUploadGoneError(err: unknown): boolean {
+  const code = String(
+    (err as { Code?: unknown })?.Code ?? (err as { code?: unknown })?.code ?? '',
+  );
+  if (code === 'NoSuchUpload') return true;
+  const name = String((err as { name?: unknown })?.name ?? '');
+  if (name === 'NoSuchUpload') return true;
+  const status = (err as { $metadata?: { httpStatusCode?: unknown } })?.$metadata?.httpStatusCode;
+  return status === 404;
+}
+
+/** Abort a session's storage-side upload, logging rather than throwing. */
+async function abortSessionUpload(session: { bucketId: string; key: string; uploadId: string }) {
+  const bucket = await getBucketById(session.bucketId);
+  if (!bucket) return;
+  try {
+    await getS3Client(bucket).send(
+      new AbortMultipartUploadCommand({
+        Bucket: bucket.bucketName,
+        Key: session.key,
+        UploadId: session.uploadId,
+      }),
+    );
+    log.info('Aborted multipart upload', { ...bucketLogMeta(bucket), key: session.key });
+  } catch (err: unknown) {
+    // Best-effort: the session is already gone from the registry, and a
+    // leftover upload is reclaimed by the bucket's lifecycle rule.
+    log.warn('Failed to abort multipart upload', {
+      ...bucketLogMeta(bucket),
+      key: session.key,
+      ...s3ErrorLogMeta(err),
+    });
+  }
+}
+
+/**
+ * Begin a chunked browser upload.
+ *
+ * The browser used to PUT the whole file through this service in one request.
+ * Every hop in front of the service has to accept that body within its own
+ * request-body window — a limit essentially every proxy imposes — and a 1 GB
+ * body needed a sustained 28.6 Mbps to finish inside a typical one, so a slower
+ * upstream was cut off and surfaced as an opaque 502 that no amount of
+ * server-side timeout tuning could prevent. Splitting the file lets each request
+ * finish in seconds.
+ *
+ * The object key is computed here, from the bucket's configured path and the
+ * client's requested name, and sealed into a signed token. The client never
+ * receives the storage's upload id, because the id plus an arbitrary key would
+ * let it write outside the configured bucket path.
+ */
+router.post(
+  '/:id/upload-multipart',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const release = await uploadGate.acquire();
+    if (!release) {
+      req.resume();
+      res.setHeader('Retry-After', '1');
+      sendApiError(
+        res,
+        503,
+        'Server is busy uploading; retry this file shortly',
+        'server_busy',
+        undefined,
+        true,
+      );
+      return;
+    }
+    res.on('close', release);
+
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+
+    const relativePath = normalizeBucketPath(String(req.query.relativePath || ''));
+    const name = String(req.query.name || '')
+      .trim()
+      .replace(/^\/+|\/+$/g, '');
+    const contentType =
+      String(req.query.contentType || '').trim() ||
+      String(req.headers['content-type'] || '').trim() ||
+      'application/octet-stream';
+    const size = Number(req.query.size || 0);
+
+    if (!name) {
+      sendApiError(res, 400, 'File name is required');
+      return;
+    }
+    if (!Number.isFinite(size) || size <= 0) {
+      sendApiError(res, 400, 'File size is required');
+      return;
+    }
+    if (size > MAX_UPLOAD_BYTES) {
+      sendApiError(
+        res,
+        400,
+        `File "${name}" exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`,
+        'too_large',
+        undefined,
+        false,
+      );
+      return;
+    }
+    const partCount = Math.ceil(size / UPLOAD_PART_SIZE_BYTES);
+    if (partCount > UPLOAD_MAX_PARTS) {
+      sendApiError(
+        res,
+        400,
+        `File "${name}" needs ${partCount} parts, over the ${UPLOAD_MAX_PARTS} part limit`,
+        'too_many_parts',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    const key = bucketObjectKey(bucket, relativePath, name);
+    const client = getS3Client(bucket);
+
+    let uploadId: string;
+    try {
+      const created = await client.send(
+        new CreateMultipartUploadCommand({
+          Bucket: bucket.bucketName,
+          Key: key,
+          ContentType: contentType,
+        }),
+      );
+      if (!created.UploadId) {
+        throw new Error('Storage did not return a multipart upload id');
+      }
+      uploadId = created.UploadId;
+    } catch (err: unknown) {
+      log.warn('Failed to start multipart upload', {
+        ...bucketLogMeta(bucket),
+        key,
+        ...s3ErrorLogMeta(err),
+      });
+      const formatted = formatS3RequestError(err, bucket);
+      sendApiError(
+        res,
+        formatted.status,
+        formatted.message,
+        'storage_upload_failed',
+        formatted.details,
+        isRetryableS3Error(err),
+      );
+      return;
+    }
+
+    // The final part carries the remainder, and is the only one allowed to be
+    // smaller than the part size. Sealed into the token rather than left to the
+    // client to declare per request, so the expected length of every part is
+    // known server-side.
+    const lastPartSize = size - UPLOAD_PART_SIZE_BYTES * (partCount - 1);
+
+    const token = createSessionToken({
+      uploadId,
+      bucketId: bucket.id,
+      key,
+      contentType,
+      size,
+      partSize: UPLOAD_PART_SIZE_BYTES,
+      lastPartSize,
+      userId: req.userKeyAuth!.userId,
+    });
+
+    log.info('Started multipart storage upload', {
+      ...bucketLogMeta(bucket),
+      requestedBy: req.userKeyAuth!.user,
+      key,
+      contentType,
+      size,
+      partCount,
+      partSize: UPLOAD_PART_SIZE_BYTES,
+    });
+
+    res.status(201).json({
+      uploadToken: token,
+      key,
+      name,
+      size,
+      contentType,
+      relativePath,
+      partSize: UPLOAD_PART_SIZE_BYTES,
+      partCount,
+    });
+  }),
+);
+
+/**
+ * One piece of a chunked upload.
+ *
+ * The body is spooled to a temporary file and then sent to the storage from
+ * there, rather than being piped straight through. The difference is what
+ * happens when the storage stumbles: a stream can be read exactly once, so a
+ * piped part that fails upstream can only be retried by asking the browser to
+ * send those bytes again. A file can be read as many times as needed, so the
+ * retry happens here, in seconds, without the client noticing.
+ *
+ * Spooling also makes the size check exact. The expected length of this part is
+ * derived from the signed session — the client cannot claim a part is the last
+ * one to escape the minimum size rule — and the copy to disk is capped at that
+ * length as it arrives, so an oversized body is refused before it can fill the
+ * disk.
+ */
+router.put(
+  '/:id/upload-part',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const release = await uploadPartGate.acquire();
+    if (!release) {
+      // Drain before answering, or the client sees a reset instead of this
+      // status and cannot tell "retry" from "the network failed".
+      req.resume();
+      res.setHeader('Retry-After', '1');
+      sendApiError(
+        res,
+        503,
+        'Server is busy uploading; retry this part shortly',
+        'server_busy',
+        undefined,
+        true,
+      );
+      return;
+    }
+    res.on('close', release);
+
+    const token = String(req.query.uploadToken || '').trim();
+    const partNumber = Number(req.query.partNumber || 0);
+
+    if (!token) {
+      req.resume();
+      sendApiError(res, 400, 'Upload token is required', 'invalid_part', undefined, false);
+      return;
+    }
+    if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > UPLOAD_MAX_PARTS) {
+      req.resume();
+      sendApiError(
+        res,
+        400,
+        `Part number must be between 1 and ${UPLOAD_MAX_PARTS}`,
+        'invalid_part',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    const session = parseSessionToken(token);
+    if (!session) {
+      // Forged, or past its lifetime. Not retryable: re-sending the same part
+      // cannot bring back a session the server will no longer accept.
+      req.resume();
+      sendApiError(
+        res,
+        404,
+        'Upload session not found or expired; restart the upload',
+        'upload_session_expired',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    // The token is the session; it carries the bucket it was minted for, so a
+    // token cannot be pointed at a different storage than the one the key was
+    // computed against.
+    if (session.bucketId !== req.params.id) {
+      req.resume();
+      sendApiError(
+        res,
+        400,
+        'Upload token does not belong to this storage',
+        'invalid_part',
+        undefined,
+        false,
+      );
+      return;
+    }
+    if (session.userId !== req.userKeyAuth!.userId) {
+      req.resume();
+      sendApiError(res, 403, 'Upload token belongs to another account', 'invalid_part', undefined, false);
+      return;
+    }
+
+    const partCount = sessionPartCount(session);
+    if (partNumber > partCount) {
+      req.resume();
+      sendApiError(
+        res,
+        400,
+        `Part number ${partNumber} is beyond the ${partCount} parts this upload declares`,
+        'invalid_part',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    const expectedBytes = expectedPartLength(session, partNumber);
+    const contentLength = Number(req.headers['content-length'] || 0);
+    // Content-Length is a fast rejection for the honest mistake and for a client
+    // that would otherwise stream a whole file at us; the spool cap below is what
+    // actually enforces the bound, since a header can be absent or wrong.
+    if (Number.isFinite(contentLength) && contentLength > 0 && contentLength !== expectedBytes) {
+      req.resume();
+      sendApiError(
+        res,
+        400,
+        `Part ${partNumber} must be ${expectedBytes} bytes, but ${contentLength} were declared`,
+        'invalid_part',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    const bucket = await getBucketById(session.bucketId);
+    if (!bucket) {
+      req.resume();
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+    const client = getS3Client(bucket);
+
+    // A part that is already fully delivered should still be cleaned up if the
+    // browser vanishes rather than waiting for a response it will never read.
+    const partAbort = new AbortController();
+    const abortPartIfClientGone = () => {
+      if (!res.writableEnded) partAbort.abort();
+    };
+    req.on('aborted', abortPartIfClientGone);
+    req.on('error', abortPartIfClientGone);
+
+    // The spool cap is the exact expected length: anything longer is a protocol
+    // violation, not a part to store.
+    //
+    // The response is deliberately sent from the `.then` below rather than from
+    // inside the callback. `withSpooled` removes the file as the callback
+    // returns, and answering first would acknowledge a part while its bytes were
+    // still on disk — a process that died in that window would leave the file
+    // for a sweep that may be hours away.
+    await withSpooled(req, expectedBytes, async (spooled) => {
+      if (spooled.bytes !== expectedBytes) {
+        throw new PartLengthError(
+          `Part ${partNumber} must be ${expectedBytes} bytes, but ${spooled.bytes} arrived`,
+        );
+      }
+
+      const uploaded = await uploadPartWithRetry(
+        client,
+        bucket,
+        session,
+        partNumber,
+        spooled.path,
+        expectedBytes,
+        partAbort.signal,
+      );
+      return uploaded.ETag || '';
+    })
+      .then((etag) => {
+        if (res.headersSent || res.writableEnded) return;
+        res.status(200).json({ ok: true, partNumber, etag, size: expectedBytes });
+      })
+      .catch((err: unknown) => {
+        if (res.headersSent || res.writableEnded) return;
+
+        // A part whose length disagreed with the session is the client's
+        // mistake and will fail identically if re-sent.
+        if (err instanceof PartLengthError) {
+          sendApiError(res, 400, err.message, 'invalid_part', undefined, false);
+          return;
+        }
+
+        log.warn('Multipart part upload failed', {
+          ...bucketLogMeta(bucket),
+          key: session.key,
+          partNumber,
+          ...s3ErrorLogMeta(err),
+        });
+
+        // The upload disappeared underneath this part — most likely it was
+        // completed or aborted while parts were still in flight. Retrying the
+        // part can never work, so say so plainly rather than reporting a
+        // retryable storage failure the client would burn its budget on.
+        if (isUploadGoneError(err)) {
+          sendApiError(
+            res,
+            409,
+            'Upload session is no longer active; restart the upload',
+            'upload_session_expired',
+            undefined,
+            false,
+          );
+          return;
+        }
+        const formatted = formatS3RequestError(err, bucket);
+        sendApiError(
+          res,
+          formatted.status,
+          formatted.message,
+          'storage_upload_failed',
+          formatted.details,
+          isRetryableS3Error(err),
+        );
+      })
+      .finally(() => {
+        req.off('aborted', abortPartIfClientGone);
+        req.off('error', abortPartIfClientGone);
+      });
+  }),
+);
+
+/**
+ * Finish a chunked upload from the parts the client reported. *
+ * The assembled size is checked against what the client declared at creation:
+ * the storage will happily complete an upload whose parts are shorter than
+ * intended, producing a silently truncated object, so a mismatch is an error
+ * rather than something to discover later from the stored bytes.
+ */
+router.post(
+  '/:id/upload-multipart/complete',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const token = stringProp(req.body || {}, 'uploadToken') || '';
+    const rawParts = Array.isArray(req.body?.parts) ? req.body.parts : [];
+
+    if (!token) {
+      sendApiError(res, 400, 'Upload token is required', 'invalid_part', undefined, false);
+      return;
+    }
+    if (!rawParts.length) {
+      sendApiError(res, 400, 'No parts provided', 'invalid_part', undefined, false);
+      return;
+    }
+
+    const session = parseSessionToken(token);
+    if (!session) {
+      sendApiError(
+        res,
+        404,
+        'Upload session not found or expired; restart the upload',
+        'upload_session_expired',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    // Every part the session declares must be accounted for, or the completed
+    // object would silently be missing a chunk. The count is derived from the
+    // signed session rather than taken from the request.
+    const expectedCount = sessionPartCount(session);
+    const parts: { ETag: string; PartNumber: number }[] = [];
+    const seen = new Set<number>();
+    for (const item of rawParts) {
+      const partNumber = numberProp(item, 'partNumber');
+      const etag = stringProp(item, 'etag');
+      if (!Number.isInteger(partNumber) || !partNumber || partNumber < 1 || !etag) {
+        sendApiError(res, 400, 'Each part needs a partNumber and etag', 'invalid_part', undefined, false);
+        return;
+      }
+      if (!partNumber || partNumber > expectedCount) {
+        sendApiError(
+          res,
+          400,
+          `Part number ${partNumber} is beyond the ${expectedCount} parts this upload declares`,
+          'invalid_part',
+          undefined,
+          false,
+        );
+        return;
+      }
+      if (seen.has(partNumber)) {
+        sendApiError(res, 400, `Part ${partNumber} was reported twice`, 'invalid_part', undefined, false);
+        return;
+      }
+      seen.add(partNumber);
+      parts.push({ ETag: etag, PartNumber: partNumber });
+    }
+
+    if (parts.length !== expectedCount) {
+      sendApiError(
+        res,
+        400,
+        `Upload has ${parts.length} of ${expectedCount} parts; completing it would lose data`,
+        'missing_parts',
+        undefined,
+        false,
+      );
+      return;
+    }
+    // The storage requires parts in ascending order.
+    parts.sort((a, b) => a.PartNumber - b.PartNumber);
+
+    const bucket = await getBucketById(session.bucketId);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+
+    const client = getS3Client(bucket);
+
+    // Reading the object back is how both a fresh completion and a duplicate one
+    // are resolved: it is the only way to tell "the object is there and whole"
+    // from "the upload is gone and nothing landed".
+    const verifyObject = async () => {
+      const head = await client.send(
+        new HeadObjectCommand({ Bucket: bucket.bucketName, Key: session.key }),
+      );
+      return { size: head.ContentLength || 0, contentType: head.ContentType };
+    };
+
+    try {
+      await client.send(
+        new CompleteMultipartUploadCommand({
+          Bucket: bucket.bucketName,
+          Key: session.key,
+          UploadId: session.uploadId,
+          MultipartUpload: { Parts: parts },
+        }),
+      );
+    } catch (err: unknown) {
+      // The completion may already have happened and only its response been
+      // lost — a retry then arrives to find the upload gone. Re-sending the
+      // whole file because a reply went missing would throw away everything
+      // already transferred, so the object itself is asked instead.
+      const alreadyGone = isUploadGoneError(err);
+      if (alreadyGone) {
+        const existing = await verifyObject().catch(() => null);
+        if (existing && existing.size === session.size) {
+          log.info('Multipart upload had already completed', {
+            ...bucketLogMeta(bucket),
+            key: session.key,
+            size: existing.size,
+          });
+          res.status(201).json({
+            ok: true,
+            key: session.key,
+            name: objectDisplayName(session.key),
+            size: existing.size,
+            contentType: existing.contentType || session.contentType,
+          });
+          return;
+        }
+      }
+
+      log.warn('Failed to complete multipart upload', {
+        ...bucketLogMeta(bucket),
+        key: session.key,
+        partCount: parts.length,
+        ...s3ErrorLogMeta(err),
+      });
+      const formatted = formatS3RequestError(err, bucket);
+      sendApiError(
+        res,
+        formatted.status,
+        formatted.message,
+        'storage_upload_failed',
+        formatted.details,
+        isRetryableS3Error(err),
+      );
+      return;
+    }
+
+    // The upload is done at the storage. There is nothing to drop server-side —
+    // the session lives in the token, which the client will not present again.
+    const head = await verifyObject();
+    const actualSize = head.size;
+    if (actualSize !== session.size) {
+      sendApiError(
+        res,
+        502,
+        `Uploaded object is ${actualSize} bytes but ${session.size} were declared`,
+        'size_mismatch',
+        [`Object: ${session.key}`],
+        // The bytes are already stored and wrong; re-sending parts cannot help.
+        false,
+      );
+      return;
+    }
+
+    log.info('Completed multipart storage upload', {
+      ...bucketLogMeta(bucket),
+      requestedBy: req.userKeyAuth!.user,
+      key: session.key,
+      size: actualSize,
+      partCount: parts.length,
+    });
+
+    res.status(201).json({
+      ok: true,
+      key: session.key,
+      name: objectDisplayName(session.key),
+      size: actualSize,
+      contentType: head.contentType || session.contentType,
+    });
+  }),
+);
+
+/**
+ * Abandon a chunked upload, so its already-uploaded parts stop occupying the
+ * bucket. Uploaded parts are invisible to listing until completion, so an
+ * upload that is never completed or aborted is pure invisible cost.
+ */
+router.post(
+  '/:id/upload-multipart/abort',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const token = stringProp(req.body || {}, 'uploadToken') || '';
+    const session = token ? parseSessionToken(token) : null;
+
+    // A token is a bearer value the client already holds, so aborting is not a
+    // state change here — it is a request to release the parts the storage is
+    // holding. Only a valid token proves the caller had the upload to begin
+    // with; an unrecognised one is treated as already gone.
+    if (session && session.bucketId === req.params.id) {
+      await abortSessionUpload(session);
+    }
+
+    // Idempotent: an unknown or expired token is success, not an error. The
+    // client calls this from cancel and failure paths, where failing it again
+    // would only obscure the original problem.
+    res.json({ ok: true });
   }),
 );
 

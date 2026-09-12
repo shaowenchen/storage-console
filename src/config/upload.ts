@@ -1,5 +1,4 @@
-const DEFAULT_MAX_UPLOAD_MB = 1024;
-const DEFAULT_DIRECT_EXPIRES_SECONDS = 900;
+const DEFAULT_MAX_UPLOAD_MB = 1024;const DEFAULT_DIRECT_EXPIRES_SECONDS = 900;
 
 function numberFromEnv(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -37,6 +36,89 @@ export const MAX_UPLOAD_BYTES = numberFromEnv('MAX_UPLOAD_MB', DEFAULT_MAX_UPLOA
 export const S3_CONCURRENCY = 8;
 
 /**
+ * Size of one piece of a browser upload.
+ *
+ * This number is the whole point of the chunked upload path, so it is worth
+ * stating what it is defending against. The browser used to PUT the entire file
+ * through the app in a single request. Every hop in front of the app then has to
+ * accept that whole body within its own patience, and a request-body window is
+ * something essentially every reverse proxy, load balancer and ingress imposes
+ * — the typical figure is a few minutes, measured from the first byte.
+ *
+ * A 1 GB body required a sustained 28.6 Mbps to finish inside five minutes, so a
+ * slower upstream was not merely slow — it was cut off, surfacing as an opaque
+ * 502 that no amount of server-side timeout or retry tuning could prevent. At
+ * 8 MB a single request needs 0.22 Mbps to finish inside that same window,
+ * leaving roughly two orders of magnitude of headroom, and a retry re-sends one
+ * piece instead of the whole file.
+ *
+ * The default sits just above S3's 5 MB minimum for a non-final part, so the
+ * part count stays low (a 1 GB object is 128 requests, against S3's 10000-part
+ * ceiling) without making any single request large enough to matter again.
+ */
+export const UPLOAD_PART_SIZE_BYTES = numberFromEnv('UPLOAD_PART_MB', 8) * 1024 * 1024;
+
+/**
+ * The request-body window this deployment should assume, in seconds.
+ *
+ * Only used to sanity-check that the part size leaves enough headroom to be
+ * worth having — see the assertion in `upload.test.ts`. The default matches the
+ * most common proxy behaviour (a few minutes); raise it if the proxies in front
+ * of this service are known to be more patient, and lower it if they are
+ * stricter.
+ */
+export const ASSUMED_PROXY_BODY_WINDOW_SECONDS = numberFromEnv(
+  'PROXY_BODY_WINDOW_SECONDS',
+  5 * 60,
+);
+
+/**
+ * Smallest a non-final part may be, per S3.
+ *
+ * Enforced here rather than left to the storage so a misbehaving client gets a
+ * clear rejection at the offending part instead of an `EntityTooSmall` at
+ * completion, after every other part has already been uploaded.
+ */
+export const S3_MIN_PART_BYTES = 5 * 1024 * 1024;
+
+/** S3's hard ceiling on parts per multipart upload. */
+export const UPLOAD_MAX_PARTS = 10000;
+
+/**
+ * How long an unfinished multipart upload is kept before it is cleaned up.
+ *
+ * A multipart upload holds its uploaded parts in the bucket, invisible to
+ * listing, until it is completed or aborted — so an abandoned one costs storage
+ * indefinitely. The registry sweeps entries older than this and aborts them.
+ *
+ * Generous because the upload is only abandoned in the registry's view: a client
+ * that is still slowly sending parts should not have the upload pulled out from
+ * under it between two of them.
+ */
+export const UPLOAD_SESSION_TTL_MS =
+  numberFromEnv('UPLOAD_SESSION_TTL_HOURS', 24) * 60 * 60 * 1000;
+
+/**
+ * How long a spooled part may sit before a later process may delete it.
+ *
+ * Cleanup is belt-and-braces: a live process removes its own files on every
+ * path, and this is what reclaims the files of a process that was killed
+ * outright. Generous, because deleting a file another instance is still writing
+ * would be far worse than leaving it a little longer.
+ */
+export const UPLOAD_SPOOL_TTL_MS =
+  numberFromEnv('UPLOAD_SPOOL_TTL_MINUTES', 60) * 60 * 1000;
+
+/**
+ * Attempts, per part, to get the bytes into the storage.
+ *
+ * The server can retry on its own here — and this is the point of spooling —
+ * because the part is on disk and re-readable. A transient storage failure then
+ * costs a little time rather than a round trip back to the browser.
+ */
+export const UPLOAD_PART_UPLOAD_ATTEMPTS = numberFromEnv('UPLOAD_PART_UPLOAD_ATTEMPTS', 4);
+
+/**
  * Browser upload PUTs processed at once, and how many more may wait.
  *
  * PutObject streams the request body to the bucket rather than buffering it, so
@@ -50,6 +132,24 @@ export const S3_CONCURRENCY = 8;
  */
 export const MAX_CONCURRENT_UPLOADS = numberFromEnv('MAX_CONCURRENT_UPLOADS', 4);
 export const MAX_QUEUED_UPLOADS = maxQueuedUploadsFromEnv(process.env.MAX_QUEUED_UPLOADS);
+
+/**
+ * Part request bodies processed at once, and how many more may wait.
+ *
+ * Deliberately separate from, and much larger than, {@link MAX_CONCURRENT_UPLOADS}.
+ * That gate was sized for whole-file transfers, where one request could be
+ * streaming a gigabyte through the process; a part is a bounded 8 MB that is
+ * finished in seconds. Keeping them on one small gate would mean a single
+ * browser — which opens a few parts in parallel by design — spending the entire
+ * allowance and starving every other uploader, so the bound that exists to be
+ * fair would be the thing enforcing unfairness.
+ *
+ * Sized so several files can be in flight at once while the process still does a
+ * bounded amount of work: a client sends a few parts per file, so this admits
+ * roughly five concurrent uploaders before the queue absorbs the rest.
+ */
+export const MAX_CONCURRENT_UPLOAD_PARTS = numberFromEnv('MAX_CONCURRENT_UPLOAD_PARTS', 16);
+export const MAX_QUEUED_UPLOAD_PARTS = numberFromEnv('MAX_QUEUED_UPLOAD_PARTS', 32);
 
 /**
  * How long a connection to the bucket may take to establish.

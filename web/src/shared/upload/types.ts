@@ -1,21 +1,21 @@
-export type UploadFileMeta = {
-  name: string;
-  size: number;
-  contentType: string;
-};
-
-export type UploadLink = {
-  name: string;
+/** Response to starting a chunked upload (POST /storages/:id/upload-multipart). */
+export type UploadSessionResponse = {
+  uploadToken: string;
   key: string;
+  name: string;
   size: number;
   contentType: string;
-  url: string;
-  headers?: Record<string, string>;
+  relativePath: string;
+  /** Maximum bytes per part; the client slices to this. */
+  partSize: number;
+  partCount: number;
 };
 
-export type UploadLinksResponse = {
-  uploads: UploadLink[];
-  expiresInSeconds?: number;
+/** One part's receipt, fed back at completion. */
+export type UploadedPart = {
+  partNumber: number;
+  etag: string;
+  size: number;
 };
 
 export type CompletedUpload = {

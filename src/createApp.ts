@@ -55,6 +55,26 @@ export function createApp(): Express {
   });
 
   app.use((err: unknown, req: Request, res: Response, _next: NextFunction) => {
+    // A body-parser rejection is the request's fault, not the server's, and it
+    // carries its own status. Reporting it as an opaque 500 would also matter
+    // beyond the wrong number: the upload client treats a status without an
+    // explicit verdict as retryable, so a body the server will never accept
+    // would be re-sent until the retry budget ran out.
+    const parserStatus = (err as { status?: unknown })?.status;
+    const parserType = (err as { type?: unknown })?.type;
+    if (typeof parserStatus === 'number' && parserStatus >= 400 && parserStatus < 500) {
+      log.warn('Rejected request body', {
+        method: req.method,
+        path: req.originalUrl,
+        type: typeof parserType === 'string' ? parserType : undefined,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      res
+        .status(parserStatus)
+        .json(apiErrorBody(err instanceof Error ? err.message : 'Invalid request body'));
+      return;
+    }
+
     log.error('Unhandled error', {
       method: req.method,
       path: req.originalUrl,

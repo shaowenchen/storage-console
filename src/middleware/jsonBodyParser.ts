@@ -2,14 +2,15 @@ import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 
 /**
- * The browser's same-origin upload proxy: `PUT /api/storages/:id/upload-object`
- * (see the route of the same name). That request's body is the file itself.
+ * Routes whose body is the file itself rather than a JSON document:
+ * `PUT /api/storages/:id/upload-object` (whole-file proxy) and
+ * `PUT /api/storages/:id/upload-part` (one piece of a chunked upload).
  *
  * Anchored on the `:id` segment rather than a bare suffix so that a storage
- * whose id happens to be `upload-object` does not disable JSON parsing for the
- * metadata routes mounted at its path.
+ * whose id happens to be `upload-object` or `upload-part` does not disable JSON
+ * parsing for the metadata routes mounted at its path.
  */
-const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/upload-object$/i;
+const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/(?:upload-object|upload-part)$/i;
 
 /**
  * True when the request carries a raw object body that must reach the route
@@ -21,6 +22,9 @@ const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/upload-object$/i;
  * the bytes are not valid JSON, `entity.too.large` past the 2mb limit — before
  * the upload route ever runs. Worse, the failed parser leaves the body consumed,
  * so the route could not stream it to the object store as a fallback either.
+ *
+ * The part route would fail the same way even faster, since a part is
+ * deliberately larger than that 2mb limit.
  */
 export function isRawObjectUploadRequest(req: Request): boolean {
   if (req.method !== 'PUT') return false;

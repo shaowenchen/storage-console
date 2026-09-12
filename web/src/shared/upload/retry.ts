@@ -16,15 +16,32 @@
 export const UPLOAD_MAX_RETRIES = 4;
 
 /**
- * Ceiling on a single attempt.
+ * Ceiling on one part transfer.
  *
- * XHR has no timeout by default, so a connection that stalls mid-upload leaves
- * the request open forever: the progress bar simply stops and the upload never
- * fails. A stalled socket is also exactly what a dropped mobile or proxy
- * connection looks like, so this is the common failure rather than an exotic
- * one. Generous because a 1 GB file on a slow link is legitimately slow.
+ * A part is a bounded, known amount of data, so unlike a whole file it can be
+ * held to a tight deadline. This is what turns a wedged connection into a
+ * failure the retry can act on, instead of a progress bar that stops moving.
+ * Generous for an 8 MB part even on a slow link — a part needs only ~0.22 Mbps
+ * to finish within this window.
+ *
+ * Replaces the whole-file deadline this module used to carry: there is no longer
+ * a single request to hold to one, and a per-part bound is both tighter and more
+ * useful, since a stalled part now fails in seconds rather than parking a file
+ * for fifteen minutes.
  */
-export const UPLOAD_ATTEMPT_TIMEOUT_MS = 15 * 60 * 1000;
+export const UPLOAD_PART_TIMEOUT_MS = 60 * 1000;
+
+/**
+ * Parts sent at once, per file.
+ *
+ * Parts are independent, so a few in flight keeps a fast link busy where one at
+ * a time would leave it idle between round trips. Kept small because the server
+ * admits a limited number of parts across all clients: a single upload taking
+ * every slot would starve everyone else, and the point of a modest per-file
+ * limit is that the server's queue absorbs a brief overshoot rather than being
+ * filled by one client.
+ */
+export const UPLOAD_PART_CONCURRENCY = 3;
 
 /** Longest the client will wait before re-sending, whatever the server says. */
 const MAX_BACKOFF_MS = 30_000;

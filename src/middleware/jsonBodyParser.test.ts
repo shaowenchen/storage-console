@@ -21,6 +21,21 @@ describe('isRawObjectUploadRequest', () => {
     );
   });
 
+  it('matches the chunked upload part PUT', () => {
+    // A part carries the file's bytes, not a JSON document, and is larger than
+    // the parser's limit by design — so it depends on this bypass exactly as the
+    // whole-file route does.
+    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-part'))).toBe(
+      true,
+    );
+    expect(
+      isRawObjectUploadRequest(fakeRequest('PUT', '/console/api/storages/abc/upload-part/')),
+    ).toBe(true);
+    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/Storages/abc/Upload-Part'))).toBe(
+      true,
+    );
+  });
+
   it('leaves every other route to the JSON parser', () => {
     expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/text-object'))).toBe(
       false,
@@ -31,11 +46,27 @@ describe('isRawObjectUploadRequest', () => {
     expect(isRawObjectUploadRequest(fakeRequest('GET', '/api/storages/abc/upload-object'))).toBe(
       false,
     );
+    // The multipart control routes carry small JSON bodies and must still be
+    // parsed — a part list has to arrive as an object, not a byte stream.
+    expect(
+      isRawObjectUploadRequest(fakeRequest('POST', '/api/storages/abc/upload-multipart')),
+    ).toBe(false);
+    expect(
+      isRawObjectUploadRequest(fakeRequest('POST', '/api/storages/abc/upload-multipart/complete')),
+    ).toBe(false);
+    expect(
+      isRawObjectUploadRequest(fakeRequest('POST', '/api/storages/abc/upload-multipart/abort')),
+    ).toBe(false);
     // A storage literally named "upload-object" must not disable JSON parsing
     // for its own metadata routes.
     expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/upload-object'))).toBe(false);
+    // Same trap for the new literal: a storage named "upload-part".
+    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/upload-part'))).toBe(false);
     expect(
       isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-object/extra')),
+    ).toBe(false);
+    expect(
+      isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-part/extra')),
     ).toBe(false);
   });
 });
@@ -126,6 +157,21 @@ describe('jsonBodyParser', () => {
     );
     expect(result.status).toBe(200);
     expect(result.receivedBytes).toBe(bigFile.length);
+  });
+
+  it('streams an upload part larger than the JSON parser limit', async () => {
+    // The whole point of the chunked path: a part is bigger than 2mb and is not
+    // JSON, and must still reach the route unread so it can be forwarded.
+    const part = Buffer.alloc(8 * 1024 * 1024, 0x62);
+    const result = await putThroughApp(
+      buildApp(),
+      '/api/storages/abc/upload-part',
+      'application/octet-stream',
+      part,
+    );
+    expect(result.status).toBe(200);
+    expect(result.payload).toBeNull();
+    expect(result.receivedBytes).toBe(part.length);
   });
 
   it('keeps enforcing the JSON body limit where the parser does apply', async () => {
