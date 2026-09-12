@@ -1464,7 +1464,7 @@ router.post(
     // whether to send bytes straight to the bucket or through here. A bucket
     // that refuses CORS is not an error: the proxy path handles it, so this only
     // decides which road the bytes take.
-    const cors = await prepareDirectUpload(bucket, req.headers);
+    const cors = await prepareDirectUpload(bucket, req.headers, req.secure);
     if (!cors.ok) {
       log.info('Direct browser upload unavailable; parts will be proxied', {
         ...bucketLogMeta(bucket),

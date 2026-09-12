@@ -93,6 +93,64 @@ export function originFromRequest(
   return isAcceptableOrigin(value) ? value.trim().replace(/\/+$/, '') : null;
 }
 
+/**
+ * Work out the origin the browser reached us at, from headers that are always
+ * present.
+ *
+ * The `Origin` header is the obvious source and the wrong one to depend on: a
+ * browser sends it for cross-origin requests, but a same-origin one may not
+ * carry it at all. Trusting it alone meant direct upload was reported
+ * unavailable on every upload, so every byte went through this service and back
+ * out again — the slow path taken silently, which is how a fix that was
+ * supposed to stop proxying ended up proxying everything.
+ *
+ * `Host` is always there. The scheme comes from `X-Forwarded-Proto` when a proxy
+ * in front set it (without it, everything behind TLS would be pinned to http and
+ * refused by the browser), falling back to the socket's own encryption.
+ */
+export function originFromHost(
+  headers: Record<string, string | string[] | undefined>,
+  socketEncrypted = false,
+): string | null {
+  const first = (value: string | string[] | undefined): string =>
+    (Array.isArray(value) ? value[0] : value)?.split(',')[0]?.trim() ?? '';
+
+  const host = first(headers['x-forwarded-host']) || first(headers['host']);
+  if (!host) return null;
+
+  const forwardedProto = first(headers['x-forwarded-proto']).toLowerCase();
+  const proto = forwardedProto === 'http' || forwardedProto === 'https'
+    ? forwardedProto
+    : socketEncrypted
+      ? 'https'
+      : 'http';
+
+  const origin = `${proto}://${host}`;
+  return isAcceptableOrigin(origin) ? origin : null;
+}
+
+/**
+ * The origin to allow direct uploads from.
+ *
+ * Configuration wins, so a deployment can pin this rather than have it vary with
+ * whatever hostname a request arrived on. Otherwise the request's own `Origin`
+ * is preferred when the browser sent one (it is the browser's own statement
+ * about where it is), and the host headers are the fallback that makes this work
+ * for a same-origin request.
+ */
+export function resolveUploadOrigin(
+  headers: Record<string, string | string[] | undefined>,
+  socketEncrypted = false,
+): string | null {
+  const configured = configuredOrigin();
+  if (configured) return isAcceptableOrigin(configured) ? stripSlash(configured) : null;
+  return originFromRequest(headers) ?? originFromHost(headers, socketEncrypted);
+}
+
+function stripSlash(origin: string): string {
+  return origin.trim().replace(/\/+$/, '');
+}
+
 /** Whether an existing rule already grants `origin` the methods uploads need. */
 function ruleCoversOrigin(rule: CORSRule, origin: string): boolean {
   const origins = rule.AllowedOrigins ?? [];
@@ -219,21 +277,25 @@ function isNoSuchCorsError(err: unknown): boolean {
 }
 
 /**
- * Whether direct uploads should be offered for this bucket.
- *
- * The origin is taken from configuration when set, so a deployment can pin it
- * rather than depend on whatever header arrives; otherwise the request's own
- * Origin is used, which is correct for a console reached at several hostnames.
+ * Whether direct uploads should be offered for this bucket, and if so, the
+ * origin they will be offered for.
  */
 export async function prepareDirectUpload(
   bucket: Bucket,
   headers: Record<string, string | string[] | undefined>,
-): Promise<CorsSetupResult> {
-  const origin = configuredOrigin() || originFromRequest(headers);
+  socketEncrypted = false,
+): Promise<CorsSetupResult & { origin?: string }> {
+  const origin = resolveUploadOrigin(headers, socketEncrypted);
   if (!origin) {
-    return { ok: false, reason: 'No usable Origin for direct upload' };
+    return {
+      ok: false,
+      reason: `Could not determine an origin to allow (host: ${
+        String(headers['host'] ?? '') || 'missing'
+      })`,
+    };
   }
-  return ensureBucketCors(getS3Client(bucket), bucket, origin);
+  const result = await ensureBucketCors(getS3Client(bucket), bucket, origin);
+  return result.ok ? { ok: true, origin } : result;
 }
 
 /** Forget cached CORS results. Tests only — the cache is process-global. */

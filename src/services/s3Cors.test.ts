@@ -6,6 +6,7 @@ import {
   isAcceptableOrigin,
   originFromRequest,
   resetCorsCacheForTests,
+  resolveUploadOrigin,
 } from './s3Cors.js';
 import type { Bucket } from '../db/store.js';
 
@@ -148,6 +149,86 @@ describe('originFromRequest', () => {
     expect(originFromRequest({})).toBeNull();
     expect(originFromRequest({ origin: '*' })).toBeNull();
     expect(originFromRequest({ origin: 'null' })).toBeNull();
+  });
+});
+
+/**
+ * The regression this pins: direct upload depended on a header a same-origin
+ * request does not have to send, so it was reported unavailable on every upload
+ * and every byte silently took the slow path — the opposite of what the direct
+ * path exists for.
+ */
+describe('resolveUploadOrigin', () => {
+  beforeEach(() => {
+    delete process.env.UPLOAD_CORS_ORIGIN;
+    resetCorsCacheForTests();
+  });
+
+  afterEach(() => {
+    delete process.env.UPLOAD_CORS_ORIGIN;
+  });
+
+  it('falls back to the host headers when there is no Origin', () => {
+    // A same-origin fetch need not carry Origin, and that is the common case.
+    expect(
+      resolveUploadOrigin({
+        host: 'console.example.com',
+        'x-forwarded-proto': 'https',
+      }),
+    ).toBe('https://console.example.com');
+  });
+
+  it('prefers the forwarded host when a proxy set one', () => {
+    expect(
+      resolveUploadOrigin({
+        host: 'internal:3001',
+        'x-forwarded-host': 'console.example.com',
+        'x-forwarded-proto': 'https',
+      }),
+    ).toBe('https://console.example.com');
+  });
+
+  it('falls back to the socket encryption when no proto was forwarded', () => {
+    expect(resolveUploadOrigin({ host: 'console.example.com' }, true)).toBe(
+      'https://console.example.com',
+    );
+    expect(resolveUploadOrigin({ host: 'console.example.com' }, false)).toBe(
+      'http://console.example.com',
+    );
+  });
+
+  it('takes the first value from a comma-separated forwarding chain', () => {
+    expect(
+      resolveUploadOrigin({
+        host: 'console.example.com',
+        'x-forwarded-proto': 'https, http',
+      }),
+    ).toBe('https://console.example.com');
+  });
+
+  it('prefers the browser’s own Origin when it sent one', () => {
+    expect(
+      resolveUploadOrigin({
+        origin: 'https://console.example.com',
+        host: 'internal:3001',
+      }),
+    ).toBe('https://console.example.com');
+  });
+
+  it('lets configuration win, so a deployment can pin the origin', () => {
+    process.env.UPLOAD_CORS_ORIGIN = 'https://pinned.example.com';
+    expect(
+      resolveUploadOrigin({ origin: 'https://other.example.com', host: 'console.example.com' }),
+    ).toBe('https://pinned.example.com');
+  });
+
+  it('refuses a configured wildcard rather than writing it to the bucket', () => {
+    process.env.UPLOAD_CORS_ORIGIN = '*';
+    expect(resolveUploadOrigin({ host: 'console.example.com' })).toBeNull();
+  });
+
+  it('gives up when there is no host at all', () => {
+    expect(resolveUploadOrigin({})).toBeNull();
   });
 });
 

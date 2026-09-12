@@ -417,6 +417,27 @@ describe('chunked upload end to end', () => {
     expect(leftoverSpoolFiles()).toHaveLength(0);
   });
 
+  it('offers direct upload for a same-origin request, which sends no Origin', async () => {
+    // The regression: a browser does not have to send `Origin` on a same-origin
+    // request, and depending on it meant direct upload was reported unavailable
+    // for every upload — every byte silently took the slow path instead.
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=sameorigin.tar&contentType=application/x-tar&size=${PART_SIZE}`,
+      {
+        method: 'POST',
+        // `Host` and the forwarded scheme are what a real deployment always has.
+        headers: {
+          'X-API-Key': uploadKey,
+          'X-Forwarded-Proto': 'https',
+        },
+        body: '',
+      },
+    );
+    expect(startRes.status).toBe(201);
+    const session = (await startRes.json()) as { directUpload?: boolean };
+    expect(session.directUpload).toBe(true);
+  });
+
   it('offers direct upload and configures the bucket for it', async () => {
     // The whole point for a console far from its storage: the bytes should not
     // travel through here at all. Offering it depends on the bucket permitting
