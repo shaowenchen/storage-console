@@ -9,6 +9,19 @@ export type UploadSessionResponse = {
   /** Maximum bytes per part; the client slices to this. */
   partSize: number;
   partCount: number;
+  /**
+   * How long the server may spend on one part. The client waits longer than
+   * this, so a slow-but-working part is not abandoned mid-retry.
+   */
+  partBudgetMs?: number;
+  /**
+   * Whether parts may be sent straight to the bucket. When false (the bucket
+   * does not permit this origin, or no origin could be established) parts go
+   * through the console instead — slower, but always available.
+   */
+  directUpload?: boolean;
+  /** Why direct upload is unavailable, for the log rather than the user. */
+  directUploadReason?: string;
 };
 
 /** One part's receipt, fed back at completion. */

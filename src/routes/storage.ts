@@ -15,7 +15,6 @@ import {
   UploadPartCommand,
   type S3Client,
 } from '@aws-sdk/client-s3';
-import { Upload } from '@aws-sdk/lib-storage';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import {
   requireAdmin,
@@ -37,7 +36,9 @@ import {
   UPLOAD_LINK_EXPIRES_SECONDS,
   UPLOAD_MAX_PARTS,
   UPLOAD_PART_SIZE_BYTES,
+  UPLOAD_PART_URL_EXPIRES_SECONDS,
   UPLOAD_PART_UPLOAD_ATTEMPTS,
+  partUploadBudgetMs,
 } from '../config/upload.js';
 import { createLogger } from '../utils/logger.js';
 import { directDownloadShellScript } from '../services/downloadScript.js';
@@ -55,6 +56,7 @@ import {
   sessionPartCount,
 } from '../services/multipartUpload.js';
 import { withSpooled } from '../services/uploadSpool.js';
+import { prepareDirectUpload } from '../services/s3Cors.js';
 import {
   attachmentContentDisposition,
   bucketListPrefix,
@@ -1263,127 +1265,6 @@ const uploadGate = createGate(MAX_CONCURRENT_UPLOADS, MAX_QUEUED_UPLOADS);
 const uploadPartGate = createGate(MAX_CONCURRENT_UPLOAD_PARTS, MAX_QUEUED_UPLOAD_PARTS);
 
 /**
- * Browser upload proxy: PUT object bytes through the console (same-origin), then
- * server PutObject with stored credentials. Avoids bucket CORS on direct-to-S3 PUTs.
- * CLI scripts continue to use /upload-links + presigned URLs.
- */
-router.put(
-  '/:id/upload-object',
-  requireAdminUploadAuth,
-  asyncHandler(async (req, res) => {
-    const release = await uploadGate.acquire();
-    if (!release) {
-      // 503 + Retry-After tells the client to back off and re-send this file.
-      // Re-sending is safe: the PUT is idempotent for a given key, and the
-      // client only finalizes records after every file has landed.
-      //
-      // Drain the body before replying. Answering while the client is still
-      // writing ends the response with unread data in flight, which Node
-      // resolves by destroying the socket — the client then sees a connection
-      // reset instead of this status, and a reset reads as a network failure
-      // rather than an instruction to retry.
-      req.resume();
-      res.setHeader('Retry-After', '1');
-      sendApiError(
-        res,
-        503,
-        'Server is busy uploading; retry this file shortly',
-        'server_busy',
-        undefined,
-        true,
-      );
-      return;
-    }
-    // Released when the response finishes, or when the client goes away
-    // mid-upload — whichever comes first.
-    res.on('close', release);
-
-    const bucket = await getBucketById(req.params.id);
-    if (!bucket) {
-      sendApiError(res, 404, 'Storage not found');
-      return;
-    }
-
-    const relativePath = normalizeBucketPath(String(req.query.relativePath || ''));
-    const name = String(req.query.name || '')
-      .trim()
-      .replace(/^\/+|\/+$/g, '');
-    const contentType =
-      String(req.query.contentType || '').trim() ||
-      String(req.headers['content-type'] || '').trim() ||
-      'application/octet-stream';
-    const contentLength = Number(req.headers['content-length'] || 0);
-
-    if (!name) {
-      sendApiError(res, 400, 'File name is required');
-      return;
-    }
-    if (!Number.isFinite(contentLength) || contentLength < 0) {
-      sendApiError(res, 400, 'Content-Length is required');
-      return;
-    }
-    if (contentLength > MAX_UPLOAD_BYTES) {
-      sendApiError(
-        res,
-        400,
-        `File "${name}" exceeds the ${MAX_UPLOAD_BYTES} byte upload limit`,
-      );
-      return;
-    }
-
-    const key = bucketObjectKey(bucket, relativePath, name);
-    const client = getS3Client(bucket);
-
-    log.info('Proxy uploading storage object', {
-      ...bucketLogMeta(bucket),
-      requestedBy: req.userKeyAuth!.user,
-      key,
-      contentType,
-      contentLength,
-    });
-
-    try {
-      const upload = new Upload({
-        client,
-        params: {
-          Bucket: bucket.bucketName,
-          Key: key,
-          Body: req,
-          ContentType: contentType,
-          ContentLength: contentLength,
-        },
-      });
-      await upload.done();
-    } catch (err: unknown) {
-      log.warn('Proxy storage upload failed', {
-        ...bucketLogMeta(bucket),
-        key,
-        ...s3ErrorLogMeta(err),
-      });
-      const formatted = formatS3RequestError(err, bucket);
-      sendApiError(
-        res,
-        formatted.status,
-        formatted.message,
-        'storage_upload_failed',
-        formatted.details,
-        isRetryableS3Error(err),
-      );
-      return;
-    }
-
-    res.status(201).json({
-      ok: true,
-      key,
-      name,
-      size: contentLength,
-      contentType,
-      relativePath,
-    });
-  }),
-);
-
-/**
  * A part whose length disagreed with the length the session requires.
  *
  * Distinct from a storage failure because it is the client's mistake: re-sending
@@ -1579,6 +1460,18 @@ router.post(
     const key = bucketObjectKey(bucket, relativePath, name);
     const client = getS3Client(bucket);
 
+    // Attempted before the upload starts so the client can be told up front
+    // whether to send bytes straight to the bucket or through here. A bucket
+    // that refuses CORS is not an error: the proxy path handles it, so this only
+    // decides which road the bytes take.
+    const cors = await prepareDirectUpload(bucket, req.headers);
+    if (!cors.ok) {
+      log.info('Direct browser upload unavailable; parts will be proxied', {
+        ...bucketLogMeta(bucket),
+        reason: cors.reason,
+      });
+    }
+
     let uploadId: string;
     try {
       const created = await client.send(
@@ -1646,6 +1539,120 @@ router.post(
       relativePath,
       partSize: UPLOAD_PART_SIZE_BYTES,
       partCount,
+      // How long the server may spend on one part. The client must be more
+      // patient than this, or it abandons requests while the server is still
+      // retrying them — see `partUploadBudgetMs`.
+      partBudgetMs: partUploadBudgetMs(),
+      // The client sends parts straight to the bucket when this is true, and
+      // through this service when it is false.
+      directUpload: cors.ok,
+      directUploadReason: cors.ok ? undefined : cors.reason,
+    });
+  }),
+);
+
+/**
+ * A presigned URL for one part, so the browser can PUT it straight to the
+ * bucket.
+ *
+ * Signed per part rather than issued all at once at creation. A presigned URL
+ * expires on a wall clock, and a large file on a slow link can easily outlast
+ * any lifetime long enough to be useful — 1 GB at 2 Mbps is over an hour — so
+ * URLs minted up front would start failing partway through. Asking for each URL
+ * as its part is about to be sent keeps the window at seconds.
+ *
+ * The bucket, key and upload id all come out of the signed session, so this
+ * cannot be used to obtain a URL for anywhere but the object the session was
+ * created for.
+ */
+router.get(
+  '/:id/upload-part-url',
+  requireAdminUploadAuth,
+  asyncHandler(async (req, res) => {
+    const token = String(req.query.uploadToken || '').trim();
+    const partNumber = Number(req.query.partNumber || 0);
+
+    if (!token) {
+      sendApiError(res, 400, 'Upload token is required', 'invalid_part', undefined, false);
+      return;
+    }
+
+    const session = parseSessionToken(token);
+    if (!session || session.bucketId !== req.params.id) {
+      sendApiError(
+        res,
+        404,
+        'Upload session not found or expired; restart the upload',
+        'upload_session_expired',
+        undefined,
+        false,
+      );
+      return;
+    }
+    if (session.userId !== req.userKeyAuth!.userId) {
+      sendApiError(res, 403, 'Upload token belongs to another account', 'invalid_part', undefined, false);
+      return;
+    }
+    if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > sessionPartCount(session)) {
+      sendApiError(
+        res,
+        400,
+        `Part number must be between 1 and ${sessionPartCount(session)}`,
+        'invalid_part',
+        undefined,
+        false,
+      );
+      return;
+    }
+
+    const bucket = await getBucketById(session.bucketId);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+
+    const client = getS3Client(bucket);
+    let url: string;
+    try {
+      url = await getSignedUrl(
+        client,
+        new UploadPartCommand({
+          Bucket: bucket.bucketName,
+          Key: session.key,
+          UploadId: session.uploadId,
+          PartNumber: partNumber,
+        }),
+        {
+          expiresIn: UPLOAD_PART_URL_EXPIRES_SECONDS,
+          unsignableHeaders: S3_PRESIGN_UNSIGNABLE_HEADERS,
+        },
+      );
+    } catch (err: unknown) {
+      log.warn('Failed to sign a multipart part URL', {
+        ...bucketLogMeta(bucket),
+        key: session.key,
+        partNumber,
+        ...s3ErrorLogMeta(err),
+      });
+      const formatted = formatS3RequestError(err, bucket);
+      sendApiError(
+        res,
+        formatted.status,
+        formatted.message,
+        'storage_upload_failed',
+        formatted.details,
+        isRetryableS3Error(err),
+      );
+      return;
+    }
+
+    res.json({
+      url,
+      partNumber,
+      // The client sends this verbatim; it is the length the session requires,
+      // so a mismatch is caught before any bytes move.
+      size: expectedPartLength(session, partNumber),
+      expiresInSeconds: UPLOAD_PART_URL_EXPIRES_SECONDS,
     });
   }),
 );

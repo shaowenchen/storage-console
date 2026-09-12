@@ -2,15 +2,14 @@ import type { NextFunction, Request, Response } from 'express';
 import express from 'express';
 
 /**
- * Routes whose body is the file itself rather than a JSON document:
- * `PUT /api/storages/:id/upload-object` (whole-file proxy) and
- * `PUT /api/storages/:id/upload-part` (one piece of a chunked upload).
+ * `PUT /api/storages/:id/upload-part` — one piece of a chunked upload, whose
+ * body is the file's bytes rather than a JSON document.
  *
  * Anchored on the `:id` segment rather than a bare suffix so that a storage
- * whose id happens to be `upload-object` or `upload-part` does not disable JSON
- * parsing for the metadata routes mounted at its path.
+ * whose id happens to be `upload-part` does not disable JSON parsing for the
+ * metadata routes mounted at its path.
  */
-const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/(?:upload-object|upload-part)$/i;
+const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/upload-part$/i;
 
 /**
  * True when the request carries a raw object body that must reach the route
@@ -23,8 +22,8 @@ const RAW_OBJECT_UPLOAD_PATH = /\/storages\/[^/]+\/(?:upload-object|upload-part)
  * the upload route ever runs. Worse, the failed parser leaves the body consumed,
  * so the route could not stream it to the object store as a fallback either.
  *
- * The part route would fail the same way even faster, since a part is
- * deliberately larger than that 2mb limit.
+ * A part would fail the same way even faster, since a part is deliberately
+ * larger than that 2mb limit.
  */
 export function isRawObjectUploadRequest(req: Request): boolean {
   if (req.method !== 'PUT') return false;

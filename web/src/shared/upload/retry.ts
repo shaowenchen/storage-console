@@ -16,20 +16,37 @@
 export const UPLOAD_MAX_RETRIES = 4;
 
 /**
- * Ceiling on one part transfer.
+ * How long the client waits on one part before giving up on it.
  *
- * A part is a bounded, known amount of data, so unlike a whole file it can be
- * held to a tight deadline. This is what turns a wedged connection into a
- * failure the retry can act on, instead of a progress bar that stops moving.
- * Generous for an 8 MB part even on a slow link — a part needs only ~0.22 Mbps
- * to finish within this window.
+ * Derived from the server's own per-part budget rather than being a number of
+ * its own, and deliberately more patient than it. Getting this relationship
+ * wrong is subtle and expensive: a client timeout shorter than the server's
+ * retry budget abandons requests while the server is still retrying them, so the
+ * server's retries are never seen, the part is re-sent from scratch, and the
+ * client's budget is spent on a part that was about to succeed.
  *
- * Replaces the whole-file deadline this module used to carry: there is no longer
- * a single request to hold to one, and a per-part bound is both tighter and more
- * useful, since a stalled part now fails in seconds rather than parking a file
- * for fifteen minutes.
+ * That is precisely what a 60 s client timeout did against this server — five
+ * attempts over ~300 s, every one cut short, the upload abandoned at five
+ * minutes with the storage never having been reached. The allowance below is
+ * the server's budget plus a margin for the last response to travel back.
  */
-export const UPLOAD_PART_TIMEOUT_MS = 60 * 1000;
+export function partTimeoutMs(serverBudgetMs?: number): number {
+  if (typeof serverBudgetMs === 'number' && Number.isFinite(serverBudgetMs) && serverBudgetMs > 0) {
+    return serverBudgetMs + PART_TIMEOUT_MARGIN_MS;
+  }
+  return DEFAULT_PART_TIMEOUT_MS;
+}
+
+/** Margin on top of the server's budget, covering the response's return trip. */
+const PART_TIMEOUT_MARGIN_MS = 30 * 1000;
+
+/**
+ * Fallback when the server does not report a budget (an older server).
+ *
+ * Chosen to exceed a plausible server budget rather than sit inside it, since
+ * being too patient only delays a failure while being too impatient causes one.
+ */
+const DEFAULT_PART_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
  * Parts sent at once, per file.

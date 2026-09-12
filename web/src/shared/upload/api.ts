@@ -50,6 +50,29 @@ export function uploadPartUrl(bucketId: string, uploadToken: string, partNumber:
   return apiUrl(`/storages/${encodeURIComponent(bucketId)}/upload-part?${params}`);
 }
 
+/**
+ * Ask for a presigned URL for one part, so its bytes can go straight to the
+ * bucket.
+ *
+ * Fetched per part rather than up front: a URL expires on a wall clock, and a
+ * large file on a slow link outlasts any lifetime worth setting — 1 GB at 2 Mbps
+ * is over an hour — so URLs issued at the start would begin failing partway
+ * through the file.
+ */
+export async function fetchPartUploadUrl(
+  bucketId: string,
+  uploadToken: string,
+  partNumber: number,
+): Promise<{ url: string; size: number }> {
+  const params = new URLSearchParams({ uploadToken, partNumber: String(partNumber) });
+  const res = await apiFetch(
+    `/storages/${encodeURIComponent(bucketId)}/upload-part-url?${params}`,
+  );
+  const data = await parseJson<{ url?: string; size?: number }>(res);
+  if (!data.url) throw new Error('Server did not return an upload URL');
+  return { url: data.url, size: Number(data.size) || 0 };
+}
+
 /** Finish a chunked upload from the parts the server acknowledged. */
 export async function completeMultipartUpload(
   bucketId: string,

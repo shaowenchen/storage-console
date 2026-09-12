@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runUpload } from './runUpload';
+import { UPLOAD_PART_CONCURRENCY, partTimeoutMs } from './retry';
 
 /**
  * Drive the chunked upload with a scripted XMLHttpRequest.
@@ -13,7 +14,7 @@ import { runUpload } from './runUpload';
 
 /** One planned response: the outcome, or the way the request fails. */
 type Plan =
-  | { status: number; body?: unknown; retryAfter?: string }
+  | { status: number; body?: unknown; retryAfter?: string; etag?: string }
   | 'network-error'
   | 'timeout';
 
@@ -42,6 +43,7 @@ class FakeXHR {
   onabort: (() => void) | null = null;
   private headers: Record<string, string> = {};
   private retryAfter: string | null = null;
+  private etag: string | null = null;
 
   open(method: string, url: string): void {
     attempts.push({ method, url, headers: {}, bodySize: null });
@@ -54,12 +56,25 @@ class FakeXHR {
   }
 
   getResponseHeader(name: string): string | null {
-    return name.toLowerCase() === 'retry-after' ? this.retryAfter : null;
+    const lower = name.toLowerCase();
+    if (lower === 'retry-after') return this.retryAfter;
+    // A PUT straight to a bucket answers with the ETag as a header, which is how
+    // the direct path reads it.
+    if (lower === 'etag') return this.etag;
+    return null;
   }
 
   send(body?: unknown): void {
     const last = attempts[attempts.length - 1];
     if (last) last.bodySize = typeof (body as { size?: unknown })?.size === 'number' ? (body as { size: number }).size : null;
+
+    // A direct attempt fails without consuming a scripted plan, so a test can
+    // make the direct route unusable without having to predict exactly how many
+    // concurrent parts will race into it.
+    if (directShouldFail && last?.url.includes('/bucket-upload')) {
+      this.onerror?.();
+      return;
+    }
 
     const plan = plans.shift();
     if (!plan) throw new Error('test ran out of scripted attempts');
@@ -74,6 +89,7 @@ class FakeXHR {
     }
     this.status = plan.status;
     this.retryAfter = plan.retryAfter ?? null;
+    this.etag = plan.etag ?? null;
     this.responseText = plan.body === undefined ? '' : JSON.stringify(plan.body);
     this.upload.onprogress?.({ lengthComputable: true, loaded: 1, total: 1 });
     this.onload?.();
@@ -107,7 +123,7 @@ function progressMessages(onProgress: (p: { percent: number; message: string }) 
 }
 
 /** The response that starts an upload, with a part size the client must obey. */
-function startBody(size: number, partSize = PART_SIZE, partCount = Math.ceil(size / partSize)) {
+function startBody(size: number, partSize = PART_SIZE, partCount = Math.ceil(size / partSize), directUpload = false) {
   return {
     uploadToken: 'token-1',
     key: 'prefix/report.pdf',
@@ -117,6 +133,8 @@ function startBody(size: number, partSize = PART_SIZE, partCount = Math.ceil(siz
     relativePath: '',
     partSize,
     partCount,
+    partBudgetMs: 120_000,
+    directUpload,
   };
 }
 
@@ -131,24 +149,67 @@ function planSuccessfulUpload(size: number, partSize = PART_SIZE) {
   for (let i = 1; i <= partCount; i++) plans.push({ status: 200, body: partBody(i) });
 }
 
-/** Requests that carried file bytes, as opposed to the start/complete calls. */
+/**
+ * Queue a start response plus one successful *direct* part response per part.
+ *
+ * A direct PUT to a bucket answers 200 with the ETag in a header and an empty
+ * body, which is what distinguishes it from the proxy's JSON body.
+ */
+function planDirectUpload(size: number, partSize = PART_SIZE, directUpload = true) {
+  const partCount = Math.ceil(size / partSize);
+  plans.push({ status: 201, body: startBody(size, partSize, partCount, directUpload) });
+  for (let i = 1; i <= partCount; i++) {
+    plans.push({ status: 200, etag: `"direct-etag-${i}"`, body: undefined });
+  }
+}
+
+/** Requests that carried file bytes, whether direct or through the console. */
 function partAttempts() {
   return attempts.filter((attempt) => attempt.url.includes('/upload-part'));
+}
+
+function directPartAttempts() {
+  return attempts.filter((attempt) => attempt.url.includes('/bucket-upload'));
 }
 
 function startAttempts() {
   return attempts.filter((attempt) => attempt.url.includes('/upload-multipart?'));
 }
 
+/** Count of calls to the part-URL endpoint, which are fetch rather than XHR. */
+let partUrlCalls = 0;
+/** Make the part-URL endpoint fail, to exercise the fallback path. */
+let partUrlShouldFail = false;
+/** Make every direct part PUT fail at the network level. */
+let directShouldFail = false;
+
 beforeEach(() => {
   plans.length = 0;
   attempts.length = 0;
   finalizeCalls = 0;
   finalizeShouldFail = false;
+  partUrlCalls = 0;
+  partUrlShouldFail = false;
+  directShouldFail = false;
   vi.stubGlobal('window', { __STORAGE_CONSOLE_CONFIG__: undefined });
   vi.stubGlobal('XMLHttpRequest', FakeXHR);
   vi.stubGlobal('fetch', async (url: RequestInfo | URL) => {
     const href = String(url);
+    if (href.includes('/upload-part-url')) {
+      partUrlCalls += 1;
+      if (partUrlShouldFail) {
+        return {
+          ok: false,
+          status: 502,
+          text: async () => '{"error":{"message":"cannot sign","retryable":true}}',
+        };
+      }
+      return {
+        ok: true,
+        status: 200,
+        text: async () => `{"url":"https://bucket-upload.example/key?part=${href.match(/partNumber=(\d+)/)?.[1]}","size":${PART_SIZE}}`,
+      };
+    }
     if (href.includes('/upload-multipart/abort') || href.includes('/upload-multipart/complete')) {
       return { ok: true, status: 201, text: async () => '{"ok":true}' };
     }
@@ -189,6 +250,116 @@ function captureFailure(promise: Promise<void>): Promise<Error | null> {
     (err: unknown) => (err instanceof Error ? err : new Error(String(err))),
   );
 }
+
+describe('runUpload direct-to-bucket', () => {
+  it('sends parts straight to the bucket when the server says it may', async () => {
+    // The point of direct upload: the bytes never touch this service, so neither
+    // it nor anything in front of it is in the data path for a large file.
+    const file = fakeFile(PART_SIZE * 3);
+    planDirectUpload(file.size);
+    const { promise } = await run(file);
+    await promise;
+
+    expect(directPartAttempts()).toHaveLength(3);
+    // Nothing went through the console's own byte-carrying route.
+    expect(partAttempts()).toHaveLength(0);
+    // One URL per part, fetched as the part is about to be sent.
+    expect(partUrlCalls).toBe(3);
+  });
+
+  it('carries the ETag from the response header into completion', async () => {
+    // A bucket answers with the ETag as a header, and a cross-origin response's
+    // headers are invisible unless CORS exposes them — the single detail that
+    // makes direct uploads fail at completion after every part "succeeded".
+    const file = fakeFile(PART_SIZE);
+    planDirectUpload(file.size);
+    const completionBody: { parts: Array<{ etag: string }> } = { parts: [] };
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal('fetch', async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url).includes('/upload-multipart/complete')) {
+        const parsed = JSON.parse(String(init?.body || '{}')) as {
+          parts: Array<{ etag: string }>;
+        };
+        completionBody.parts = parsed.parts;
+      }
+      return originalFetch(url as never, init as never);
+    });
+    const { promise } = await run(file);
+    await promise;
+
+    expect(completionBody.parts[0]?.etag).toBe('"direct-etag-1"');
+  });
+
+  it('falls back to the console when a direct part fails', async () => {
+    // A bucket that will not accept the browser's origin still has to work.
+    const file = fakeFile(PART_SIZE * 2);
+    plans.push({ status: 201, body: startBody(file.size, PART_SIZE, 2, true) });
+    // Every direct attempt fails; the proxy then carries both parts.
+    plans.push({ status: 200, body: partBody(1) });
+    plans.push({ status: 200, body: partBody(2) });
+    directShouldFail = true;
+    const { promise, messages } = await run(file);
+    await promise;
+
+    expect(partAttempts()).toHaveLength(2);
+    // The fallback is said out loud, so a bucket that refuses looks different
+    // from one that is merely slow.
+    expect(messages.some((m) => m.includes('through the console instead'))).toBe(true);
+  });
+
+  it('stops trying the direct route once it has fallen back', async () => {
+    // A bucket that refused once will refuse again. Parts sent in parallel race
+    // into the first failure, so the cost is bounded by the concurrency rather
+    // than by how many parts the file has.
+    const file = fakeFile(PART_SIZE * 6);
+    plans.push({ status: 201, body: startBody(file.size, PART_SIZE, 6, true) });
+    for (let i = 1; i <= 6; i++) plans.push({ status: 200, body: partBody(i) });
+    directShouldFail = true;
+    const { promise } = await run(file);
+    await promise;
+
+    // Bounded, not proportional: a file of any size pays this many failed direct
+    // attempts at most, not one per part.
+    expect(directPartAttempts().length).toBeLessThanOrEqual(UPLOAD_PART_CONCURRENCY);
+    expect(directPartAttempts().length).toBeLessThan(6);
+    expect(partUrlCalls).toBeLessThanOrEqual(UPLOAD_PART_CONCURRENCY);
+    // Every part still landed.
+    expect(partAttempts()).toHaveLength(6);
+  });
+
+  it('goes straight to the proxy when the server says direct is unavailable', async () => {
+    const file = fakeFile(PART_SIZE);
+    planSuccessfulUpload(file.size);
+    const { promise } = await run(file);
+    await promise;
+
+    expect(directPartAttempts()).toHaveLength(0);
+    // Not even asked for a URL.
+    expect(partUrlCalls).toBe(0);
+  });
+
+  it('falls back when the part URL itself cannot be obtained', async () => {
+    const file = fakeFile(PART_SIZE);
+    plans.push({ status: 201, body: startBody(file.size, PART_SIZE, 1, true) });
+    plans.push({ status: 200, body: partBody(1) });
+    partUrlShouldFail = true;
+    const { promise, messages } = await run(file);
+    await promise;
+
+    expect(partAttempts()).toHaveLength(1);
+    expect(messages.some((m) => m.includes('through the console instead'))).toBe(true);
+  });
+
+  it('waits longer than the server budget, so a slow part is not cut off mid-retry', async () => {
+    // The defect that made this necessary: a 60s client timeout against a
+    // server that retries for ~480s abandoned requests while the server was
+    // still working on them, so the server's retries were never seen.
+    const serverBudgetMs = 480_000;
+    expect(partTimeoutMs(serverBudgetMs)).toBeGreaterThan(serverBudgetMs);
+    // And a fallback for an older server that reports no budget.
+    expect(partTimeoutMs(undefined)).toBeGreaterThanOrEqual(300_000);
+  });
+});
 
 describe('runUpload chunking', () => {
   it('sends one request per part, each bounded by the server part size', async () => {

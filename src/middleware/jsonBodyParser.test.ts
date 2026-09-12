@@ -8,29 +8,16 @@ function fakeRequest(method: string, path: string): Request {
 }
 
 describe('isRawObjectUploadRequest', () => {
-  it('matches the browser upload proxy PUT, with or without a route prefix', () => {
-    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-object'))).toBe(
-      true,
-    );
-    expect(
-      isRawObjectUploadRequest(fakeRequest('PUT', '/console/api/storages/abc/upload-object/')),
-    ).toBe(true);
-    // Express matches routes case-insensitively, so this must not diverge from it.
-    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/Storages/abc/Upload-Object'))).toBe(
-      true,
-    );
-  });
-
-  it('matches the chunked upload part PUT', () => {
+  it('matches the chunked upload part PUT, with or without a route prefix', () => {
     // A part carries the file's bytes, not a JSON document, and is larger than
-    // the parser's limit by design — so it depends on this bypass exactly as the
-    // whole-file route does.
+    // the parser's limit by design — so it depends on this bypass.
     expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-part'))).toBe(
       true,
     );
     expect(
       isRawObjectUploadRequest(fakeRequest('PUT', '/console/api/storages/abc/upload-part/')),
     ).toBe(true);
+    // Express matches routes case-insensitively, so this must not diverge from it.
     expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/Storages/abc/Upload-Part'))).toBe(
       true,
     );
@@ -43,9 +30,10 @@ describe('isRawObjectUploadRequest', () => {
     expect(isRawObjectUploadRequest(fakeRequest('POST', '/api/storages/abc/upload-links'))).toBe(
       false,
     );
-    expect(isRawObjectUploadRequest(fakeRequest('GET', '/api/storages/abc/upload-object'))).toBe(
-      false,
-    );
+    // Reading a part URL is an ordinary JSON call, not a byte stream.
+    expect(
+      isRawObjectUploadRequest(fakeRequest('GET', '/api/storages/abc/upload-part-url')),
+    ).toBe(false);
     // The multipart control routes carry small JSON bodies and must still be
     // parsed — a part list has to arrive as an object, not a byte stream.
     expect(
@@ -57,14 +45,9 @@ describe('isRawObjectUploadRequest', () => {
     expect(
       isRawObjectUploadRequest(fakeRequest('POST', '/api/storages/abc/upload-multipart/abort')),
     ).toBe(false);
-    // A storage literally named "upload-object" must not disable JSON parsing
-    // for its own metadata routes.
-    expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/upload-object'))).toBe(false);
-    // Same trap for the new literal: a storage named "upload-part".
+    // A storage literally named "upload-part" must not disable JSON parsing for
+    // its own metadata routes.
     expect(isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/upload-part'))).toBe(false);
-    expect(
-      isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-object/extra')),
-    ).toBe(false);
     expect(
       isRawObjectUploadRequest(fakeRequest('PUT', '/api/storages/abc/upload-part/extra')),
     ).toBe(false);
@@ -138,25 +121,13 @@ describe('jsonBodyParser', () => {
     const fileBytes = Buffer.from('{"not":"a request body"}\n');
     const result = await putThroughApp(
       buildApp(),
-      '/api/storages/abc/upload-object',
+      '/api/storages/abc/upload-part',
       'application/json',
       fileBytes,
     );
     expect(result.status).toBe(200);
     expect(result.payload).toBeNull();
     expect(result.receivedBytes).toBe(fileBytes.length);
-  });
-
-  it('streams an upload larger than the JSON parser limit', async () => {
-    const bigFile = Buffer.alloc(3 * 1024 * 1024, 0x61);
-    const result = await putThroughApp(
-      buildApp(),
-      '/api/storages/abc/upload-object',
-      'application/json',
-      bigFile,
-    );
-    expect(result.status).toBe(200);
-    expect(result.receivedBytes).toBe(bigFile.length);
   });
 
   it('streams an upload part larger than the JSON parser limit', async () => {

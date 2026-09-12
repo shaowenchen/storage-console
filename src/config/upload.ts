@@ -99,6 +99,18 @@ export const UPLOAD_SESSION_TTL_MS =
   numberFromEnv('UPLOAD_SESSION_TTL_HOURS', 24) * 60 * 60 * 1000;
 
 /**
+ * Lifetime of a presigned per-part URL, in seconds.
+ *
+ * Short on purpose, because it costs nothing to be: a URL is minted as its part
+ * is about to be sent, so the file's total duration never has to fit inside this
+ * window. Keeping it brief bounds how long a leaked URL stays usable.
+ */
+export const UPLOAD_PART_URL_EXPIRES_SECONDS = numberFromEnv(
+  'UPLOAD_PART_URL_EXPIRES_SECONDS',
+  900,
+);
+
+/**
  * How long a spooled part may sit before a later process may delete it.
  *
  * Cleanup is belt-and-braces: a live process removes its own files on every
@@ -117,6 +129,32 @@ export const UPLOAD_SPOOL_TTL_MS =
  * costs a little time rather than a round trip back to the browser.
  */
 export const UPLOAD_PART_UPLOAD_ATTEMPTS = numberFromEnv('UPLOAD_PART_UPLOAD_ATTEMPTS', 4);
+
+/**
+ * Longest this service may spend on one part before it gives up.
+ *
+ * The browser needs to know this and be more patient than it. A client timeout
+ * shorter than the server's budget is worse than useless: it abandons the
+ * request while the server is still retrying, so the server's retries are never
+ * seen, the part is re-sent from scratch, and the client's own retry budget is
+ * spent on a part that was about to succeed. That is exactly what happened with
+ * a 60 s client timeout against this budget — five client attempts, ~300 s, all
+ * of them cut short and the upload abandoned at 5 minutes with the storage
+ * untouched.
+ *
+ * Derived from the real settings rather than written down as a second number,
+ * so changing the socket timeout or the attempt count cannot leave the client
+ * cutting the server off mid-retry.
+ */
+export function partUploadBudgetMs(): number {
+  const attempts = UPLOAD_PART_UPLOAD_ATTEMPTS;
+  // The backoff this service sleeps between attempts: 500ms, 1s, 2s, ...
+  let backoffMs = 0;
+  for (let attempt = 0; attempt < attempts - 1; attempt++) {
+    backoffMs += Math.min(500 * 2 ** attempt, 5000);
+  }
+  return attempts * S3_SOCKET_TIMEOUT_MS + backoffMs;
+}
 
 /**
  * Browser upload PUTs processed at once, and how many more may wait.

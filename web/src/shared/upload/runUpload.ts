@@ -4,6 +4,7 @@ import {
   abortMultipartUpload,
   completeMultipartUpload,
   completeStorageUpload,
+  fetchPartUploadUrl,
   uploadMultipartUrl,
   uploadPartUrl,
 } from './api';
@@ -12,9 +13,9 @@ import { normalizeRelativePath } from './helpers';
 import {
   UPLOAD_MAX_RETRIES,
   UPLOAD_PART_CONCURRENCY,
-  UPLOAD_PART_TIMEOUT_MS,
   backoffMs,
   isRetryableStatus,
+  partTimeoutMs,
   sleep,
 } from './retry';
 
@@ -40,6 +41,10 @@ type StartedUpload = {
   relativePath: string;
   partSize: number;
   partCount: number;
+  /** Server's per-part budget; the client waits longer than this. */
+  partBudgetMs?: number;
+  /** False when parts must go through the console (bucket will not allow direct). */
+  directUpload?: boolean;
 };
 
 /** A failed attempt, with whether re-sending it is worth trying. */
@@ -57,6 +62,19 @@ class UploadAttemptError extends Error {
 
 /** Status and response body of a finished attempt, for the error formatter. */
 type AttemptResponse = { status: number; raw: string };
+
+/** A successful byte-carrying request: its body, and any ETag it carried. */
+type BytesResponse = { body: string; etag: string };
+
+/**
+ * Ceiling on the call that starts an upload.
+ *
+ * Separate from the part budget because it carries no file bytes — it asks the
+ * service to create an upload and tell the client where to send parts. It may
+ * still wait on the storage, and on configuring the bucket's CORS, so it is not
+ * instant; but it should never take as long as sending a part.
+ */
+const START_UPLOAD_TIMEOUT_MS = 120 * 1000;
 
 function parseErrorBody(raw: string): unknown {
   if (!raw) return null;
@@ -96,7 +114,7 @@ function putBytes(
   onChunk: (loaded: number) => void,
   timeoutMs: number,
   signal?: AbortSignal,
-): Promise<string> {
+): Promise<BytesResponse> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open(method, url);
@@ -132,7 +150,15 @@ function putBytes(
     };
     xhr.onload = () => {
       if (xhr.status >= 200 && xhr.status < 300) {
-        finish(() => resolve(xhr.responseText));
+        finish(() =>
+          resolve({
+            body: xhr.responseText,
+            // A PUT straight to the bucket answers with the ETag as a header; the
+            // proxy route answers with it in the body. Both are read here so the
+            // caller does not have to know which route the part took.
+            etag: xhr.getResponseHeader('ETag') || '',
+          }),
+        );
         return;
       }
       const response: AttemptResponse = {
@@ -212,6 +238,62 @@ async function mapLimited<T, R>(
 }
 
 /**
+ * Send one part, trying the bucket directly first.
+ *
+ * Direct is the path that matters for a large file: the bytes go from the
+ * browser to the bucket and nowhere else, so neither this service nor anything
+ * in front of it is in the data path, and the transfer is not bounded by how far
+ * apart the storage and the console happen to be.
+ *
+ * Falling back rather than failing is deliberate. Direct upload depends on the
+ * bucket permitting this origin, which can be unavailable for reasons entirely
+ * outside the upload — most often a browser refusing the CORS preflight — and in
+ * that case the proxy route still works, just more slowly.
+ */
+async function sendPart(
+  bucketId: string,
+  started: StartedUpload,
+  chunk: Chunk,
+  slice: Blob,
+  contentType: string,
+  label: string,
+  timeoutMs: number,
+  directAllowed: boolean,
+  onChunk: (loaded: number) => void,
+  onDirectFailed: (reason: string) => void,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (directAllowed) {
+    try {
+      const { url } = await fetchPartUploadUrl(bucketId, started.uploadToken, chunk.partNumber);
+      const response = await putBytes('PUT', url, slice, contentType, label, onChunk, timeoutMs, signal);
+      return response.etag;
+    } catch (err) {
+      // A cancellation is the user's decision, not a reason to try the other
+      // route — letting it propagate stops the upload promptly.
+      if (signal?.aborted) throw err;
+      // Nor is a rejection that will repeat: re-sending the same bytes through
+      // the proxy would fail identically and only slower.
+      if (err instanceof UploadAttemptError && !err.retryable) throw err;
+      // Anything else is worth trying the other way, and worth saying so: a
+      // bucket whose CORS was never applied should not look like a direct
+      // upload that merely ran slowly.
+      onDirectFailed(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  const url = uploadPartUrl(bucketId, started.uploadToken, chunk.partNumber);
+  const response = await putBytes('PUT', url, slice, contentType, label, onChunk, timeoutMs, signal);
+  // The proxy answers with the ETag in its JSON body rather than a header.
+  if (response.etag) return response.etag;
+  try {
+    return String((JSON.parse(response.body) as { etag?: string }).etag || '');
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Send every part, retrying each independently.
  *
  * This is where the old design's cost is repaid: a failure used to mean
@@ -226,33 +308,43 @@ async function uploadParts(
   chunks: Chunk[],
   reportProgress: (partNumber: number, loadedInPart: number) => void,
   onRetry: (partNumber: number, attempt: number, waitMs: number, reason: string) => void,
+  onDirectFailed: (reason: string) => void,
+  directUpload: boolean,
+  timeoutMs: number,
   signal?: AbortSignal,
 ): Promise<UploadedPart[]> {
   const contentType = file.type || 'application/octet-stream';
+  // Once a direct attempt has fallen back for a reason that is not transient,
+  // the rest of the file uses the proxy. A bucket that refused once will refuse
+  // again, and retrying the direct route per part would add a failing round trip
+  // to every one of them.
+  let directAllowed = directUpload;
 
   return mapLimited(chunks, UPLOAD_PART_CONCURRENCY, async (chunk) => {
     const slice = file.slice(chunk.start, chunk.end);
     const label = `Uploading ${file.name} (part ${chunk.partNumber}/${chunks.length})`;
-    const url = uploadPartUrl(bucketId, started.uploadToken, chunk.partNumber);
 
     for (let attempt = 0; ; attempt++) {
       try {
-        const raw = await putBytes(
-          'PUT',
-          url,
+        const etag = await sendPart(
+          bucketId,
+          started,
+          chunk,
           slice,
           contentType,
           label,
+          timeoutMs,
+          directAllowed,
           (loaded) => reportProgress(chunk.partNumber, loaded),
-          UPLOAD_PART_TIMEOUT_MS,
+          (reason) => {
+            // Give up on the direct route for the remaining parts, and say why
+            // once rather than for every part that follows.
+            if (directAllowed) onDirectFailed(reason);
+            directAllowed = false;
+          },
           signal,
         );
-        const parsed = raw ? (JSON.parse(raw) as { etag?: string }) : {};
-        return {
-          partNumber: chunk.partNumber,
-          etag: String(parsed.etag || ''),
-          size: chunk.size,
-        };
+        return { partNumber: chunk.partNumber, etag, size: chunk.size };
       } catch (err) {
         if (signal?.aborted) throw new Error('Upload cancelled');
 
@@ -280,7 +372,7 @@ async function startUpload(
   signal?: AbortSignal,
 ): Promise<StartedUpload> {
   const url = uploadMultipartUrl(bucketId, relativePath, file);
-  const raw = await putBytes(
+  const response = await putBytes(
     'POST',
     url,
     // The create call carries no file bytes; an empty body keeps it identical to
@@ -289,10 +381,14 @@ async function startUpload(
     'application/json',
     label,
     () => {},
-    UPLOAD_PART_TIMEOUT_MS,
+    // Not a part, so it is not held to the part budget: it creates an upload and
+    // returns, and a request with no body has no reason to take minutes. The
+    // server may reach the storage before answering, which is what the allowance
+    // is for.
+    START_UPLOAD_TIMEOUT_MS,
     signal,
   );
-  const data = raw ? (JSON.parse(raw) as Partial<StartedUpload>) : {};
+  const data = response.body ? (JSON.parse(response.body) as Partial<StartedUpload>) : {};
   if (!data.uploadToken || !data.key) {
     throw new Error(`Could not start upload of "${file.name}"`);
   }
@@ -375,6 +471,16 @@ export async function runUpload({
             )}s (${reason})`,
           });
         },
+        (reason) => {
+          // Said once, so a bucket that will not accept direct uploads is
+          // visible rather than looking like an upload that is merely slow.
+          onProgress({
+            percent: 5 + ((uploadedBeforeCurrent + furthest) / totalBytes) * 85,
+            message: `${label} — uploading through the console instead (${reason})`,
+          });
+        },
+        started.directUpload !== false,
+        partTimeoutMs(started.partBudgetMs),
         signal,
       );
     } catch (err) {

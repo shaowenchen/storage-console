@@ -9,6 +9,7 @@ import { resetMigrateForTests } from '../db/migrate.js';
 import { createBucket } from '../db/repos/buckets.js';
 import { bootstrapAuthKeys, getCachedAuthKey, resetAuthKeyStoreForTests } from '../services/authKeyStore.js';
 import { clearS3Client } from '../services/s3.js';
+import { resetCorsCacheForTests } from '../services/s3Cors.js';
 
 /**
  * The end-to-end proof that the fix holds.
@@ -62,6 +63,10 @@ type FakeStorage = {
   failPartsUntilAttempt: number;
   /** How many part PUTs have been received, including retries. */
   partAttempts: () => number;
+  /** CORS policies written to this bucket, as the storage parsed them. */
+  corsWrites: Array<{ origins: string[]; methods: string[]; exposed: string[] }>;
+  /** Make the CORS write fail, as a bucket with no permission would. */
+  corsWriteShouldFail: boolean;
   close: () => Promise<void>;
 };
 
@@ -79,6 +84,8 @@ async function startFakeStorage(): Promise<FakeStorage> {
   const objects = new Map<string, number>();
   const state: { failPartsWith: number | null; failPartsUntilAttempt: number; partAttempts: number } =
     { failPartsWith: null, failPartsUntilAttempt: 0, partAttempts: 0 };
+  const corsWrites: Array<{ origins: string[]; methods: string[]; exposed: string[] }> = [];
+  const corsState = { hasPolicy: false, writeShouldFail: false };
 
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || '/', 'http://127.0.0.1');
@@ -96,6 +103,36 @@ async function startFakeStorage(): Promise<FakeStorage> {
           ? Number(req.headers['content-length'])
           : null,
       });
+
+      // Bucket CORS: a GET of the configuration, or a PUT to set it. Recognised
+      // by the query string, since the path is the bucket itself.
+      if (url.searchParams.has('cors')) {
+        if (req.method === 'GET') {
+          if (!corsState.hasPolicy) {
+            res.writeHead(404, { 'Content-Type': 'application/xml' });
+            res.end('<?xml version="1.0"?><Error><Code>NoSuchCORSConfiguration</Code></Error>');
+            return;
+          }
+          res.writeHead(200, { 'Content-Type': 'application/xml' });
+          res.end('<?xml version="1.0"?><CORSConfiguration></CORSConfiguration>');
+          return;
+        }
+        const xml = Buffer.concat(chunks).toString('utf8');
+        corsWrites.push({
+          origins: [...xml.matchAll(/<AllowedOrigin>(.*?)<\/AllowedOrigin>/g)].map((m) => m[1]!),
+          methods: [...xml.matchAll(/<AllowedMethod>(.*?)<\/AllowedMethod>/g)].map((m) => m[1]!),
+          exposed: [...xml.matchAll(/<ExposeHeader>(.*?)<\/ExposeHeader>/g)].map((m) => m[1]!),
+        });
+        if (corsState.writeShouldFail) {
+          res.writeHead(403, { 'Content-Type': 'application/xml' });
+          res.end('<?xml version="1.0"?><Error><Code>AccessDenied</Code></Error>');
+          return;
+        }
+        corsState.hasPolicy = true;
+        res.writeHead(200);
+        res.end();
+        return;
+      }
 
       // Initiate multipart upload: POST with ?uploads.
       if (req.method === 'POST' && url.searchParams.has('uploads')) {
@@ -199,6 +236,13 @@ async function startFakeStorage(): Promise<FakeStorage> {
       state.failPartsUntilAttempt = value;
     },
     partAttempts: () => state.partAttempts,
+    corsWrites,
+    get corsWriteShouldFail() {
+      return corsState.writeShouldFail;
+    },
+    set corsWriteShouldFail(value: boolean) {
+      corsState.writeShouldFail = value;
+    },
     close: () =>
       new Promise<void>((resolve) => {
         server.close(() => resolve());
@@ -243,6 +287,10 @@ describe('chunked upload end to end', () => {
     spoolRoot = mkdtempSync(join(tmpdir(), 'storage-console-spool-'));
     previousSpoolDir = process.env.UPLOAD_SPOOL_DIR;
     process.env.UPLOAD_SPOOL_DIR = spoolRoot;
+
+    // The CORS cache is process-global and this process reuses one bucket id
+    // across tests, so a cached "already configured" would hide the write.
+    resetCorsCacheForTests();
 
     // Started first, so the bucket can be created pointing at it.
     storage = await startFakeStorage();
@@ -366,6 +414,132 @@ describe('chunked upload end to end', () => {
     expect(storage.objects.get(session.key)).toBe(FILE_SIZE);
 
     // Spooling must not leave anything behind once the parts are stored.
+    expect(leftoverSpoolFiles()).toHaveLength(0);
+  });
+
+  it('offers direct upload and configures the bucket for it', async () => {
+    // The whole point for a console far from its storage: the bytes should not
+    // travel through here at all. Offering it depends on the bucket permitting
+    // this origin, which the server arranges rather than asking an operator to.
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=direct.tar&contentType=application/x-tar&size=${PART_SIZE}`,
+      {
+        method: 'POST',
+        headers: { 'X-API-Key': uploadKey, Origin: 'https://console.example.com' },
+        body: '',
+      },
+    );
+    expect(startRes.status).toBe(201);
+    const session = (await startRes.json()) as {
+      uploadToken: string;
+      directUpload?: boolean;
+      partBudgetMs?: number;
+    };
+    expect(session.directUpload).toBe(true);
+    // The client is told the server's budget so it can be more patient than it.
+    expect(session.partBudgetMs).toBeGreaterThan(0);
+
+    // The bucket was told to allow the console's origin, with ETag exposed —
+    // without which every part would upload and completion would still fail.
+    const corsWrite = storage.corsWrites.at(-1);
+    expect(corsWrite?.origins).toContain('https://console.example.com');
+    expect(corsWrite?.exposed).toContain('ETag');
+    expect(corsWrite?.methods).toContain('PUT');
+  });
+
+  it('signs a URL per part rather than issuing them all at the start', async () => {
+    // A URL expires on a wall clock, and a large file on a slow link outlasts
+    // any lifetime worth setting, so they are minted as each part is sent.
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=sign.tar&contentType=application/x-tar&size=${FILE_SIZE}`,
+      {
+        method: 'POST',
+        headers: { 'X-API-Key': uploadKey, Origin: 'https://console.example.com' },
+        body: '',
+      },
+    );
+    const session = (await startRes.json()) as { uploadToken: string; partCount: number };
+
+    const urlRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-part-url?uploadToken=${session.uploadToken}&partNumber=1`,
+      { headers: { 'X-API-Key': uploadKey } },
+    );
+    expect(urlRes.status).toBe(200);
+    const signed = (await urlRes.json()) as { url: string; size: number };
+    expect(signed.url).toContain('X-Amz-Signature');
+    expect(signed.url).toContain('partNumber=1');
+    // The size comes from the session, so the client cannot send a short part.
+    expect(signed.size).toBe(PART_SIZE);
+  });
+
+  it('refuses to sign a part beyond what the upload declares', async () => {
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=oob2.tar&contentType=application/x-tar&size=${PART_SIZE}`,
+      { method: 'POST', headers: { 'X-API-Key': uploadKey }, body: '' },
+    );
+    const session = (await startRes.json()) as { uploadToken: string };
+
+    const res = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-part-url?uploadToken=${session.uploadToken}&partNumber=5`,
+      { headers: { 'X-API-Key': uploadKey } },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('refuses to sign for a storage the session was not created for', async () => {
+    const other = await createBucket(
+      'other',
+      'ObjectStorage',
+      storage.endpoint,
+      'us-east-1',
+      'access-key',
+      'secret-key',
+      'other-bkt',
+      '',
+      'admin',
+    );
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=cross2.tar&contentType=application/x-tar&size=${PART_SIZE}`,
+      { method: 'POST', headers: { 'X-API-Key': uploadKey }, body: '' },
+    );
+    const session = (await startRes.json()) as { uploadToken: string };
+
+    const res = await fetch(
+      `${app.origin}/api/storages/${other.id}/upload-part-url?uploadToken=${session.uploadToken}&partNumber=1`,
+      { headers: { 'X-API-Key': uploadKey } },
+    );
+    expect(res.status).toBe(404);
+    clearS3Client(other.id);
+  });
+
+  it('falls back to proxied parts when the bucket refuses CORS', async () => {
+    // A bucket that will not let the browser talk to it must still work; the
+    // only difference should be which road the bytes take.
+    storage.corsWriteShouldFail = true;
+    const startRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-multipart?relativePath=&name=nocors.tar&contentType=application/x-tar&size=${PART_SIZE}`,
+      {
+        method: 'POST',
+        headers: { 'X-API-Key': uploadKey, Origin: 'https://console.example.com' },
+        body: '',
+      },
+    );
+    expect(startRes.status).toBe(201);
+    const session = (await startRes.json()) as { directUpload?: boolean; uploadToken: string };
+    // Told plainly, so the client goes straight to the proxy rather than
+    // discovering it part by part.
+    expect(session.directUpload).toBe(false);
+
+    // And the proxied part route still works for it.
+    const partRes = await fetch(
+      `${app.origin}/api/storages/${bucketId}/upload-part?uploadToken=${session.uploadToken}&partNumber=1`,
+      {
+        method: 'PUT',
+        headers: { 'X-API-Key': uploadKey, 'Content-Type': 'application/octet-stream' },
+        body: Buffer.alloc(PART_SIZE, 0x61),
+      },
+    );
+    expect(partRes.status).toBe(200);
     expect(leftoverSpoolFiles()).toHaveLength(0);
   });
 
