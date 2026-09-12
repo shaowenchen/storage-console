@@ -206,6 +206,27 @@ export function s3ErrorHttpStatus(err: unknown): number {
   return 502;
 }
 
+/**
+ * Whether re-sending the same object write could reasonably succeed.
+ *
+ * A storage returning 5xx, throttling, or dropping the connection is a transient
+ * condition that a retry can survive. A 4xx is the request or the credentials
+ * being wrong, and re-sending it just fails again — except 408, which the store
+ * uses for a request that timed out rather than one it rejected.
+ *
+ * The status-less case is retryable on purpose: `s3ErrorHttpStatus` maps it to
+ * 502, and it covers DNS, TLS, connection refused and reset, all of which are
+ * the environment being momentarily unreachable rather than the request being
+ * malformed.
+ */
+export function isRetryableS3Error(err: unknown): boolean {
+  const metadata = objectProp(err, '$metadata');
+  const status = numberProp(metadata, 'httpStatusCode');
+  if (!status || status < 400 || status >= 600) return true;
+  if (status === 408 || status === 429) return true;
+  return status >= 500;
+}
+
 export function formatS3RequestError(
   err: unknown,
   bucket: Bucket,

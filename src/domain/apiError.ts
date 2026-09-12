@@ -5,6 +5,15 @@ export interface ApiErrorBody {
     code: string;
     message: string;
     details?: string[];
+    /**
+     * Whether re-sending the same request could reasonably succeed.
+     *
+     * Stated explicitly rather than left for the client to infer from the status
+     * class, because the status alone is ambiguous here: this service reports an
+     * upstream storage failure as 502, which is retryable, while a 400 for an
+     * oversized file uses the same route and is not.
+     */
+    retryable?: boolean;
   };
 }
 
@@ -37,6 +46,9 @@ export function sendApiError(
   message: string,
   code?: string,
   details?: string[],
+  retryable?: boolean,
 ): void {
-  res.status(status).json(apiErrorBody(message, code, details));
+  const body = apiErrorBody(message, code, details);
+  if (retryable !== undefined) body.error.retryable = retryable;
+  res.status(status).json(body);
 }

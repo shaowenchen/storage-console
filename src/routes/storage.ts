@@ -17,9 +17,11 @@ import {
   requireAdminUploadAuth,
 } from '../middleware/adminAuth.js';
 import { asyncHandler } from '../middleware/asyncHandler.js';
-import { mapWithConcurrency } from '../lib/concurrency.js';
+import { mapWithConcurrency, createGate } from '../lib/concurrency.js';
 import {
   DOWNLOAD_LINK_EXPIRES_SECONDS,
+  MAX_CONCURRENT_UPLOADS,
+  MAX_QUEUED_UPLOADS,
   MAX_UPLOAD_BYTES,
   MAX_UPLOAD_FILES,
   S3_CONCURRENCY,
@@ -45,6 +47,7 @@ import {
   formatS3RequestError,
   getS3Client,
   isObjectPublic,
+  isRetryableS3Error,
   normalizeBucketPath,
   objectDisplayName,
   publicObjectUrl,
@@ -1220,6 +1223,16 @@ router.get(
 );
 
 /**
+ * Browser upload PUTs processed at once.
+ *
+ * Acquired at the top of the route rather than around the PutObject call,
+ * because the request body is what an unbounded number of them would be
+ * streaming through the process at the same time. Shedding load here keeps the
+ * in-flight set a function of configuration instead of browser behaviour.
+ */
+const uploadGate = createGate(MAX_CONCURRENT_UPLOADS, MAX_QUEUED_UPLOADS);
+
+/**
  * Browser upload proxy: PUT object bytes through the console (same-origin), then
  * server PutObject with stored credentials. Avoids bucket CORS on direct-to-S3 PUTs.
  * CLI scripts continue to use /upload-links + presigned URLs.
@@ -1228,6 +1241,33 @@ router.put(
   '/:id/upload-object',
   requireAdminUploadAuth,
   asyncHandler(async (req, res) => {
+    const release = await uploadGate.acquire();
+    if (!release) {
+      // 503 + Retry-After tells the client to back off and re-send this file.
+      // Re-sending is safe: the PUT is idempotent for a given key, and the
+      // client only finalizes records after every file has landed.
+      //
+      // Drain the body before replying. Answering while the client is still
+      // writing ends the response with unread data in flight, which Node
+      // resolves by destroying the socket — the client then sees a connection
+      // reset instead of this status, and a reset reads as a network failure
+      // rather than an instruction to retry.
+      req.resume();
+      res.setHeader('Retry-After', '1');
+      sendApiError(
+        res,
+        503,
+        'Server is busy uploading; retry this file shortly',
+        'server_busy',
+        undefined,
+        true,
+      );
+      return;
+    }
+    // Released when the response finishes, or when the client goes away
+    // mid-upload — whichever comes first.
+    res.on('close', release);
+
     const bucket = await getBucketById(req.params.id);
     if (!bucket) {
       sendApiError(res, 404, 'Storage not found');
@@ -1297,6 +1337,7 @@ router.put(
         formatted.message,
         'storage_upload_failed',
         formatted.details,
+        isRetryableS3Error(err),
       );
       return;
     }
