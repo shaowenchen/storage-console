@@ -9,7 +9,13 @@ import {
   type ServiceOutputTypes,
 } from '@aws-sdk/client-s3';
 import type { BuildMiddleware } from '@smithy/types';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 import { type Bucket } from '../db/store.js';
+import {
+  S3_CONNECT_TIMEOUT_MS,
+  S3_REQUEST_TIMEOUT_MS,
+  S3_SOCKET_TIMEOUT_MS,
+} from '../config/upload.js';
 import { createLogger, redactUrl } from '../utils/logger.js';
 
 const log = createLogger('s3');
@@ -265,12 +271,35 @@ export function formatS3RequestError(
   return { message, details, status: s3ErrorHttpStatus(err) };
 }
 
-export function createS3Client(bucket: Bucket): S3Client {
+/** Timeouts applied to every bucket request; overridable for tests. */
+export type S3Timeouts = {
+  socketMs?: number;
+  connectMs?: number;
+  requestMs?: number;
+};
+
+export function createS3Client(bucket: Bucket, timeouts: S3Timeouts = {}): S3Client {
   const client = new S3Client({
     endpoint: normalizeS3Endpoint(bucket.endpoint),
     region: normalizeS3Region(bucket.region, bucket.endpoint),
     forcePathStyle: shouldForcePathStyle(bucket.endpoint),
     requestChecksumCalculation: 'WHEN_REQUIRED',
+    // Timeouts must go through the request handler. Passing socketTimeout or
+    // connectionTimeout at the top level of the client config looks plausible
+    // but is silently ignored — only the handler reads them — so a stalled
+    // bucket would keep the SDK's default of "no timeout at all". See
+    // S3_SOCKET_TIMEOUT_MS for why that is terminal for an upload.
+    requestHandler: new NodeHttpHandler({
+      // The inactivity guard, and the one doing the real work.
+      socketTimeout: timeouts.socketMs ?? S3_SOCKET_TIMEOUT_MS,
+      connectionTimeout: timeouts.connectMs ?? S3_CONNECT_TIMEOUT_MS,
+      // Counts total duration rather than inactivity, so it is set far above
+      // any legitimate transfer: a ceiling on the absurd, not on the slow.
+      // throwOnRequestTimeout is required, or exceeding it only logs a warning
+      // and leaves the request running.
+      requestTimeout: timeouts.requestMs ?? S3_REQUEST_TIMEOUT_MS,
+      throwOnRequestTimeout: true,
+    }),
     credentials: {
       accessKeyId: bucket.accessKey.trim(),
       secretAccessKey: bucket.secretKey.trim(),
