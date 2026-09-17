@@ -122,6 +122,37 @@ export async function listObjectKeys(
   return parseJson<ObjectKeysResult>(res);
 }
 
+export type ObjectDownloadLink = {
+  key: string;
+  /** File name to save as, taken from the key. */
+  name: string;
+  url: string;
+};
+
+export type ObjectDownloadLinksResult = {
+  links: ObjectDownloadLink[];
+  expiresInSeconds: number;
+  direct: boolean;
+};
+
+/**
+ * Signed bucket URLs for a set of keys.
+ *
+ * Used by the directory download, which fetches the bytes in the browser so it
+ * can write them into a chosen folder. Signing them together avoids a round
+ * trip per object.
+ */
+export async function getDownloadLinks(
+  bucketId: string,
+  keys: string[],
+): Promise<ObjectDownloadLinksResult> {
+  const res = await apiFetch(`/storages/${bucketId}/download-links`, {
+    method: 'POST',
+    body: JSON.stringify({ keys }),
+  });
+  return parseJson<ObjectDownloadLinksResult>(res);
+}
+
 export async function getObjectAccess(
   bucketId: string,
   key: string,

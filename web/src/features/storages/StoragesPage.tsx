@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link, useSearchParams } from 'react-router-dom';
 import {
   confirm,
   notify,
@@ -14,7 +14,16 @@ import { useRailCollapsed } from '../../shared/components/useRailCollapsed';
 import { UploadModal } from '../../shared/components/UploadModal';
 import { useListingCache } from '../../shared/hooks/useListingCache';
 import { apiUrl } from '../../shared/api';
-import { downloadSequentially } from '../../shared/download/sequential';
+import { downloadAll } from '../../shared/download/batch';
+import {
+  downloadIntoDirectory,
+  pickDirectory,
+  readableFetchError,
+  relativeDownloadSegments,
+  supportsDirectoryPicker,
+  type DirectoryDownloadEntry,
+  type DirectoryHandleLike,
+} from '../../shared/download/directory';
 import { copyToClipboard, objectAbsoluteKey, objectRelativePath } from '../../shared/format';
 import { requestErrorMessage } from '../../shared/requestError';
 import { getDownloadKey, storageDownloadScriptUrl } from '../../shared/upload/api';
@@ -23,6 +32,7 @@ import {
   deleteStorage,
   deleteStorageObject,
   getDownloadLink,
+  getDownloadLinks,
   getObjectAccess,
   listObjectKeys,
   listStorageFiles,
@@ -36,6 +46,11 @@ import { ObjectFileTable } from './ObjectFileTable';
 import { ObjectTextModal, type ObjectTextMode } from './ObjectTextModal';
 import { StorageFormModal } from './StorageFormModal';
 import type { Storage, StorageFileItem } from './types';
+import {
+  applyStorageLocation,
+  parseStorageLocation,
+  type StorageLocation,
+} from './urlState';
 import './storages.css';
 
 const STORAGE_LIST_KEY = 'storageConsole.storageListCollapsed';
@@ -56,8 +71,34 @@ type ObjectAccessPatch = {
 export function StoragesPage() {
   const [storages, setStorages] = useState<Storage[]>([]);
   const [listReady, setListReady] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [prefix, setPrefix] = useState('');
+  // The open storage and folder live in the URL, so a refresh (or a shared
+  // link) reopens the same listing rather than the first bucket's root. The URL
+  // is the single source of truth; navigate to change them.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const location = useMemo(() => parseStorageLocation(searchParams), [searchParams]);
+  const { storageId: selectedId, prefix } = location;
+
+  const navigateTo = useCallback(
+    (next: StorageLocation) => {
+      setSearchParams((prev) => applyStorageLocation(prev, next));
+    },
+    [setSearchParams],
+  );
+
+  const setPrefix = useCallback(
+    (nextPrefix: string) => {
+      navigateTo({ storageId: selectedId, prefix: nextPrefix });
+    },
+    [navigateTo, selectedId],
+  );
+
+  const selectStorage = useCallback(
+    (nextId: string | null) => {
+      navigateTo({ storageId: nextId, prefix: '' });
+    },
+    [navigateTo],
+  );
+
   const [items, setItems] = useState<StorageFileItem[]>([]);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [filesPending, setFilesPending] = useState(false);
@@ -171,24 +212,19 @@ export function StoragesPage() {
     }
   }
 
+  // Stable: only fetches the list. Which entry is selected is reconciled
+  // separately below, so this does not re-run (and re-fetch) on every
+  // selection change.
   const loadStorages = useCallback(async () => {
     try {
       const data = await listStorages();
       setStorages(data);
-      const stillSelected = selectedId && data.some((s) => s.id === selectedId);
-      if (!stillSelected) {
-        const firstId = data[0]?.id ?? null;
-        setSelectedId(firstId);
-        setPrefix('');
-        setItems([]);
-        setNextCursor(null);
-      }
     } catch (err) {
       notifyError(requestErrorMessage(err, 'Failed to load storages'), 'Failed to load storages');
     } finally {
       setListReady(true);
     }
-  }, [selectedId]);
+  }, []);
 
   const loadFiles = useCallback(
     async (force = false) => {
@@ -254,9 +290,32 @@ export function StoragesPage() {
     void loadStorages();
   }, [loadStorages]);
 
+  // Guards the first listing: a URL can name a storage that no longer exists
+  // (deleted, or a link from another deployment), and requesting its files
+  // would only 404 and flash an error before the reconcile below fixes it.
+  const selectionIsKnown = !selectedId || storages.some((s) => s.id === selectedId);
+
   useEffect(() => {
-    if (selectedId) void loadFiles();
-  }, [selectedId, prefix, loadFiles]);
+    if (selectedId && selectionIsKnown) void loadFiles();
+  }, [selectedId, prefix, loadFiles, selectionIsKnown]);
+
+  /**
+   * Reconcile the URL against the storages that actually exist. An empty URL
+   * (a fresh visit) selects the first storage; a URL naming a storage that has
+   * since been deleted falls back the same way. The replacement is done with
+   * `replace`, so it does not leave a dead entry in history.
+   */
+  useEffect(() => {
+    if (!listReady) return;
+    if (selectedId && storages.some((s) => s.id === selectedId)) return;
+    const firstId = storages[0]?.id ?? null;
+    if (firstId === selectedId) return;
+    setSearchParams((prev) => applyStorageLocation(prev, { storageId: firstId, prefix: '' }), {
+      replace: true,
+    });
+    setItems([]);
+    setNextCursor(null);
+  }, [listReady, storages, selectedId, setSearchParams]);
 
   async function onLoadMore() {
     if (!selectedId || !nextCursor) return;
@@ -294,7 +353,8 @@ export function StoragesPage() {
       await deleteStorage(storage.id);
       listingCache.invalidateAll();
       if (selectedId === storage.id) {
-        setSelectedId(null);
+        // Leaves the URL invalid; the reconcile effect picks the next storage.
+        selectStorage(null);
         setItems([]);
       }
       await loadStorages();
@@ -323,13 +383,33 @@ export function StoragesPage() {
   }
 
   /**
-   * Downloads every object under a folder, one at a time. The files land flat
-   * in the browser's download folder — a per-file download cannot create
+   * Downloads every object under a folder.
+   *
+   * On browsers with the File System Access API the user picks a directory and
+   * the objects are written into it, which preserves the folder structure and
+   * gives real progress. Elsewhere every file is handed to the browser as its
+   * own download, which flattens the tree — a per-file download cannot create
    * directories, so nested names collide and the browser renames them.
    */
   async function onDownloadFolder(key: string) {
     if (!selectedId) return;
     const bucketId = selectedId;
+
+    // The picker needs transient user activation, so it is opened before the
+    // first await: listing the folder first would spend the gesture and the
+    // picker would be refused.
+    let directory: DirectoryHandleLike | null = null;
+    if (supportsDirectoryPicker()) {
+      try {
+        directory = await pickDirectory();
+      } catch (err) {
+        notifyError(readableFetchError(err));
+        return;
+      }
+      // Dismissing the picker is a decision, not a failure.
+      if (!directory) return;
+    }
+
     let listing;
     try {
       listing = await listObjectKeys(bucketId, key, true);
@@ -341,7 +421,6 @@ export function StoragesPage() {
       toast('Folder is empty', 'error');
       return;
     }
-
     if (listing.truncated) {
       toast(
         `Folder has more than ${listing.maxObjects} objects; downloading the first ${listing.maxObjects}`,
@@ -349,16 +428,35 @@ export function StoragesPage() {
       );
     }
 
-    const urls = listing.keys.map((objectKey) => {
-      const params = new URLSearchParams({ key: objectKey });
-      return apiUrl(`/storages/${encodeURIComponent(bucketId)}/download-object?${params}`);
-    });
+    if (!directory) {
+      const urls = listing.keys.map((objectKey) => {
+        const params = new URLSearchParams({ key: objectKey });
+        return apiUrl(`/storages/${encodeURIComponent(bucketId)}/download-object?${params}`);
+      });
+      const started = toast(`Downloading ${urls.length} files…`);
+      const result = await downloadAll(urls);
+      updateToast(started, `Started ${result.started} downloads`);
+      return;
+    }
 
-    const started = toast(`Downloading ${urls.length} files…`);
-    const result = await downloadSequentially(urls, {
-      onProgress: (completed, total) => {
-        if (completed === total || completed % 10 === 0) {
-          updateToast(started, `Downloading ${completed}/${total}…`);
+    let links;
+    try {
+      links = await getDownloadLinks(bucketId, listing.keys);
+    } catch (err) {
+      notifyError(requestErrorMessage(err, 'Failed to create download links'));
+      return;
+    }
+
+    const entries: DirectoryDownloadEntry[] = links.links.map((link) => ({
+      segments: relativeDownloadSegments(link.key, key),
+      url: link.url,
+    }));
+
+    const started = toast(`Downloading ${entries.length} files…`);
+    const result = await downloadIntoDirectory(directory, entries, {
+      onProgress: (written, total) => {
+        if (written === total || (written > 0 && written % 5 === 0)) {
+          updateToast(started, `Downloading ${written}/${total}…`);
         }
       },
     });
@@ -366,11 +464,15 @@ export function StoragesPage() {
     if (result.failed.length) {
       updateToast(
         started,
-        `Downloaded ${result.completed}/${urls.length}; ${result.failed.length} failed`,
+        `Wrote ${result.written}/${entries.length} files; ${result.failed.length} failed`,
         'error',
       );
+      // One message for the first failure: a bucket refusing cross-origin
+      // reads fails every file the same way, and the reason is the actionable
+      // part — it is fixed on the bucket, not here.
+      notifyError(result.failed[0]!.reason, 'Some files could not be downloaded');
     } else {
-      updateToast(started, `Downloaded ${result.completed} files`);
+      updateToast(started, `Downloaded ${result.written} files`);
     }
   }
 
@@ -596,8 +698,7 @@ export function StoragesPage() {
                 className={`bucket-item ${storage.id === selectedId ? 'active' : ''}`}
                 onClick={() => {
                   if (selectedId === storage.id) return;
-                  setSelectedId(storage.id);
-                  setPrefix('');
+                  selectStorage(storage.id);
                   setOpenMenuId(null);
                 }}
               >

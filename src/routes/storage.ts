@@ -1022,6 +1022,85 @@ router.get(
   }),
 );
 
+/**
+ * Signed GET URLs for a set of keys, so a browser can fetch the bytes straight
+ * from the bucket.
+ *
+ * This exists for the directory download: writing files through the File System
+ * Access API needs the bytes in JavaScript, and routing every one of them
+ * through this service would mean a large folder travels here and back out
+ * again. The URLs are signed together, so a client that has just listed a
+ * folder does not pay a round trip per object.
+ *
+ * `attachment` is left off these URLs on purpose: the caller is downloading via
+ * `fetch`, where Content-Disposition has no effect.
+ */
+router.post(
+  '/:id/download-links',
+  requireAdminDownloadAuth,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+
+    const requested = req.body as { keys?: unknown } | undefined;
+    const keys = Array.isArray(requested?.keys)
+      ? requested.keys.filter((key: unknown): key is string => typeof key === 'string' && !!key)
+      : [];
+    if (!keys.length) {
+      sendApiError(res, 400, 'At least one object key is required');
+      return;
+    }
+    if (keys.length > MAX_FOLDER_DOWNLOAD_OBJECTS) {
+      sendApiError(
+        res,
+        400,
+        `At most ${MAX_FOLDER_DOWNLOAD_OBJECTS} object keys can be signed at once`,
+        'too_many_keys',
+      );
+      return;
+    }
+
+    const client = getS3Client(bucket);
+    // Signing is local, but issuing hundreds of them is still work; the cap
+    // above bounds it rather than a concurrency gate.
+    const links = keys.map((key) => ({
+      key,
+      name: objectDisplayName(key) || 'download',
+    }));
+
+    const signed = await mapWithConcurrency(links, S3_CONCURRENCY, async (link) => {
+      const url = await getSignedUrl(
+        client,
+        new GetObjectCommand({
+          Bucket: bucket.bucketName,
+          Key: link.key,
+        }),
+        {
+          expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS,
+          unsignableHeaders: S3_PRESIGN_UNSIGNABLE_HEADERS,
+        },
+      );
+      return { ...link, url };
+    });
+
+    log.info('Created storage direct download links', {
+      ...bucketLogMeta(bucket),
+      requestedBy: req.userKeyAuth!.user,
+      objectCount: signed.length,
+      expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
+    });
+    res.json({
+      links: signed,
+      expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
+      direct: true,
+    });
+  }),
+);
+
 router.get(
   '/:id/download-object-link',
   requireAdminDownloadAuth,

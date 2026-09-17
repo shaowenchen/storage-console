@@ -275,3 +275,126 @@ describe('recursive object key listing', () => {
     expect(res.status).toBe(400);
   });
 });
+
+/**
+ * The signing endpoint behind the directory download.
+ *
+ * Signing is local, so the fake storage serves nothing here; what matters is
+ * that each key comes back with its own signed URL, that the file name is
+ * derived from the key, and that the batch is bounded before it is signed.
+ */
+describe('batch download links', () => {
+  let dir: string;
+  let storage: FakeStorage;
+  let app: { origin: string; close: () => Promise<void> };
+  let cookie: string;
+  let bucketId: string;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'storage-console-links-'));
+    process.env.SQL_DSN = `sqlite://${join(dir, 'test.sqlite')}`;
+    process.env.ADMIN_USER_KEY = 'test-admin-key';
+    resetAdapterForTests();
+    resetMigrateForTests();
+    resetAuthKeyStoreForTests();
+
+    storage = await startFakeStorage([]);
+    await bootstrapAuthKeys();
+
+    const bucket = await createBucket(
+      'test bucket',
+      'ObjectStorage',
+      storage.endpoint,
+      'us-east-1',
+      'access-key',
+      'secret-key',
+      'b',
+      '',
+      'admin',
+    );
+    bucketId = bucket.id;
+    app = await startApp();
+
+    const login = await fetch(`${app.origin}/api/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key: 'test-admin-key' }),
+    });
+    expect(login.status).toBe(200);
+    cookie = (login.headers.get('set-cookie') || '').split(';')[0]!;
+  });
+
+  afterEach(async () => {
+    await app.close();
+    await storage.close();
+    clearS3Client(bucketId);
+    resetAdapterForTests();
+    resetMigrateForTests();
+    resetAuthKeyStoreForTests();
+    delete process.env.SQL_DSN;
+    delete process.env.ADMIN_USER_KEY;
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  async function requestLinks(keys: unknown) {
+    const res = await fetch(`${app.origin}/api/storages/${bucketId}/download-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Cookie: cookie },
+      body: JSON.stringify({ keys }),
+    });
+    return { status: res.status, body: (await res.json()) as Record<string, unknown> };
+  }
+
+  it('signs every requested key, with its name', async () => {
+    const { status, body } = await requestLinks(['logs/a.txt', 'logs/deep/b.txt']);
+
+    expect(status).toBe(200);
+    const links = body.links as Array<{ key: string; name: string; url: string }>;
+    expect(links.map((l) => l.key)).toEqual(['logs/a.txt', 'logs/deep/b.txt']);
+    expect(links.map((l) => l.name)).toEqual(['a.txt', 'b.txt']);
+    for (const link of links) {
+      expect(link.url).toContain('X-Amz-Signature=');
+    }
+    // The key must survive into the signed path, slashes intact.
+    expect(decodeURIComponent(links[0]!.url)).toContain('/b/logs/a.txt');
+    expect(decodeURIComponent(links[1]!.url)).toContain('/b/logs/deep/b.txt');
+    expect(body.direct).toBe(true);
+    expect(body.expiresInSeconds).toBeGreaterThan(0);
+  });
+
+  it('signs URLs the browser can read cross-origin, without a forced download', async () => {
+    const { body } = await requestLinks(['logs/a.txt']);
+    const url = (body.links as Array<{ url: string }>)[0]!.url;
+
+    // `attachment` would be pointless for a fetch, and the caller decides how
+    // to store the bytes, so it must not be forced here.
+    expect(url).not.toContain('response-content-disposition');
+  });
+
+  it('ignores non-string entries instead of failing the batch', async () => {
+    const { body } = await requestLinks(['a.txt', 42, null, '', 'b.txt']);
+    const links = body.links as Array<{ key: string }>;
+    expect(links.map((l) => l.key)).toEqual(['a.txt', 'b.txt']);
+  });
+
+  it('refuses an empty key list', async () => {
+    const { status } = await requestLinks([]);
+    expect(status).toBe(400);
+  });
+
+  it('refuses a list past the cap, before signing anything', async () => {
+    const keys = Array.from({ length: 1001 }, (_, i) => `k/${i}.bin`);
+    const { status, body } = await requestLinks(keys);
+    expect(status).toBe(400);
+    expect((body.error as { code?: string })?.code).toBe('too_many_keys');
+  });
+
+  it('requires authentication', async () => {
+    const res = await fetch(`${app.origin}/api/storages/${bucketId}/download-links`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: ['a.txt'] }),
+    });
+    expect(res.status).toBe(401);
+  });
+});
