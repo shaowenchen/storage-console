@@ -105,7 +105,7 @@ export function objectDisplayName(key: string): string {
  *   `filename=%22x%22` and saves as `%22x%22`. A bare token survives as-is;
  *   anything outside the RFC 6266 token charset goes through `filename*`.
  */
-export function attachmentContentDisposition(filename: string): string {
+export function contentDisposition(type: 'attachment' | 'inline', filename: string): string {
   const trimmed = filename.trim() || 'download';
   const sanitized = trimmed.replace(/[\r\n\\"]/g, '_');
 
@@ -114,8 +114,17 @@ export function attachmentContentDisposition(filename: string): string {
 
   // Everything else (spaces, `;`, non-ASCII): RFC 5987 only (no companion filename=).
   return isPlainToken
-    ? `attachment; filename=${sanitized}`
-    : `attachment; filename*=UTF-8''${encodeURIComponent(sanitized)}`;
+    ? `${type}; filename=${sanitized}`
+    : `${type}; filename*=UTF-8''${encodeURIComponent(sanitized)}`;
+}
+
+export function attachmentContentDisposition(filename: string): string {
+  return contentDisposition('attachment', filename);
+}
+
+/** Opens in the browser instead of forcing a save. */
+export function inlineContentDisposition(filename: string): string {
+  return contentDisposition('inline', filename);
 }
 
 export function encodeS3Key(key: string): string {

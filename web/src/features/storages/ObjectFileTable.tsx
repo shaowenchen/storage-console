@@ -12,7 +12,7 @@ type Props = {
   /** When true and items are empty, render nothing instead of the empty-state panel. */
   pending?: boolean;
   onOpenFolder: (relativePrefix: string) => void;
-  onPreview: (key: string) => void;
+  onOpen: (key: string) => void;
   onEdit: (key: string) => void;
   onDownload: (key: string) => void;
   onCopyLink: (item: StorageFileItem) => void;
@@ -30,7 +30,7 @@ export function ObjectFileTable({
   items,
   pending = false,
   onOpenFolder,
-  onPreview,
+  onOpen,
   onEdit,
   onDownload,
   onCopyLink,
@@ -125,6 +125,7 @@ export function ObjectFileTable({
                     }
                   : undefined
               }
+              onDoubleClick={isFolder ? undefined : () => onOpen(item.key)}
             >
               <td
                 className={
@@ -165,7 +166,11 @@ export function ObjectFileTable({
                 )}
               </td>
               <td className="table-date">{isFolder ? '-' : formatDate(item.createdAt)}</td>
-              <td className="actions" onClick={(e) => e.stopPropagation()}>
+              <td
+                className="actions"
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              >
                 <FileRowActions
                   menuId={menuId}
                   openMenuId={openMenuId}
@@ -182,11 +187,7 @@ export function ObjectFileTable({
                   publicUrl={item.publicUrl}
                   aclSupported={item.aclSupported}
                   aclResolved={item.aclResolved}
-                  onPreview={
-                    !isFolder && looksLikeTextFileName(item.name || item.key)
-                      ? () => onPreview(item.key)
-                      : undefined
-                  }
+                  onOpen={!isFolder ? () => onOpen(item.key) : undefined}
                   onEdit={
                     !isFolder && looksLikeTextFileName(item.name || item.key)
                       ? () => onEdit(item.key)

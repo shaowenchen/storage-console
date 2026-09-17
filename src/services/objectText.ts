@@ -163,6 +163,26 @@ export function guessTextContentType(key: string): string {
   return EXTENSION_CONTENT_TYPES[ext] || 'text/plain; charset=utf-8';
 }
 
+/**
+ * Inline responses are rendered by the browser, so a stored
+ * `application/octet-stream` — what the uploader records for `.sh`, `.yaml`,
+ * `.conf`, `.md`, … — forces a download of exactly the files this console
+ * mostly holds. Recover a text type from the key in that case.
+ *
+ * Returns undefined for anything else, including keys that merely look like
+ * text but already carry a real type, and non-text keys: `guessTextContentType`
+ * falls back to `text/plain`, which would corrupt an image.
+ */
+export function inlineContentTypeHint(
+  key: string,
+  storedContentType: string | null | undefined,
+): string | undefined {
+  const mime = storedContentType?.split(';')[0]?.trim().toLowerCase();
+  const isGeneric = !mime || mime === 'application/octet-stream';
+  if (!isGeneric) return undefined;
+  return looksLikeTextObjectKey(key) ? guessTextContentType(key) : undefined;
+}
+
 export type ObjectTextGateFailure =
   | { ok: false; reason: 'too_large'; maxBytes: number; size: number }
   | { ok: false; reason: 'not_text'; contentType: string | null }

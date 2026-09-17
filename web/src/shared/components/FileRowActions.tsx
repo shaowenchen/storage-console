@@ -24,7 +24,7 @@ type Props = {
   publicUrl?: string;
   aclSupported?: boolean;
   aclResolved?: boolean;
-  onPreview?: () => void;
+  onOpen?: () => void;
   onEdit?: () => void;
   onDownload?: () => void;
   onCopyLink?: () => void;
@@ -49,7 +49,7 @@ export function FileRowActions({
   publicUrl,
   aclSupported,
   aclResolved = false,
-  onPreview,
+  onOpen,
   onEdit,
   onDownload,
   onCopyLink,
@@ -157,7 +157,7 @@ export function FileRowActions({
             isFolder={isFolder}
             isPublic={displayPublic}
             showAclActions={showAclActions}
-            onPreview={onPreview ? withClose(onPreview) : undefined}
+            onOpen={onOpen ? withClose(onOpen) : undefined}
             onEdit={onEdit ? withClose(onEdit) : undefined}
             onDownload={onDownload ? withClose(onDownload) : undefined}
             onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}

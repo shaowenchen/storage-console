@@ -45,6 +45,7 @@ import { directDownloadShellScript } from '../services/downloadScript.js';
 import {
   gateObjectTextAccess,
   guessTextContentType,
+  inlineContentTypeHint,
   looksLikeTextObjectKey,
   MAX_OBJECT_TEXT_BYTES,
 } from '../services/objectText.js';
@@ -59,6 +60,7 @@ import { withSpooled } from '../services/uploadSpool.js';
 import { prepareDirectUpload } from '../services/s3Cors.js';
 import {
   attachmentContentDisposition,
+  inlineContentDisposition,
   bucketListPrefix,
   bucketLogMeta,
   bucketObjectKey,
@@ -918,12 +920,37 @@ router.get(
 
     const client = getS3Client(bucket);
     const filename = objectDisplayName(key) || 'download';
+    const inline = String(req.query.disposition || '') === 'inline';
+
+    // Inline responses are rendered by the browser, so a stored
+    // `application/octet-stream` would force a download of exactly the text
+    // files this console mostly holds. Recover a type from the key when the
+    // stored one is generic — never for non-text keys, where the fallback guess
+    // (`text/plain`) would corrupt the response.
+    let responseContentType: string | undefined;
+    if (inline) {
+      try {
+        const head = await client.send(
+          new HeadObjectCommand({
+            Bucket: bucket.bucketName,
+            Key: key,
+          }),
+        );
+        responseContentType = inlineContentTypeHint(key, head.ContentType);
+      } catch {
+        // A failed probe only costs us the type hint; the signed URL still works.
+      }
+    }
+
     const url = await getSignedUrl(
       client,
       new GetObjectCommand({
         Bucket: bucket.bucketName,
         Key: key,
-        ResponseContentDisposition: attachmentContentDisposition(filename),
+        ResponseContentDisposition: inline
+          ? inlineContentDisposition(filename)
+          : attachmentContentDisposition(filename),
+        ...(responseContentType ? { ResponseContentType: responseContentType } : {}),
       }),
       {
         expiresIn: DOWNLOAD_LINK_EXPIRES_SECONDS,
@@ -937,6 +964,8 @@ router.get(
       key,
       expiresInSeconds: DOWNLOAD_LINK_EXPIRES_SECONDS,
       direct: true,
+      inline,
+      responseContentType,
     });
     res.redirect(url);
   }),

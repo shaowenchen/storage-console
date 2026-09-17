@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { notify, notifyError } from './AppNotice';
+import { notifyError, toast } from './AppNotice';
 import type { Storage } from '../../features/storages/types';
 import { copyToClipboard, formatSize } from '../format';
 import { fetchUploadLimits, getUploadKey, storageUploadScriptUrl } from '../upload/api';
@@ -130,16 +130,18 @@ export function UploadModal({ open, config, storages, initialFiles, onClose, onC
         const key = await getUploadKey();
         const cmd = uploadRunCommand(scriptEndpoint, key);
         const ok = await copyToClipboard(cmd);
-        notify(ok ? 'Copied run command.' : 'Failed to copy run command.');
+        toast(ok ? 'Run command copied' : 'Failed to copy run command', ok ? 'success' : 'error');
         return;
       } catch {
-        notifyError('Failed to load upload key.');
+        toast('Failed to load upload key.', 'error');
         return;
       }
     }
     const ok = await copyToClipboard(value);
-    notify(
-      ok ? `Copied ${part === 'file' ? 'file path snippet' : 'run command'}.` : 'Copy failed.',
+    const label = part === 'file' ? 'file path snippet' : 'run command';
+    toast(
+      ok ? `${label[0].toUpperCase()}${label.slice(1)} copied` : `Failed to copy ${label}`,
+      ok ? 'success' : 'error',
     );
   }
 

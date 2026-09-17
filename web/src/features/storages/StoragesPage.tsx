@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { confirm, notify, notifyError } from '../../shared/components/AppNotice';
+import { confirm, notify, notifyError, toast } from '../../shared/components/AppNotice';
 import { ListRailHeader } from '../../shared/components/ListRailHeader';
 import { ListItemActionMenu } from '../../shared/components/ListItemActionMenu';
 import { MoveObjectModal } from '../../shared/components/MoveObjectModal';
 import { useRailCollapsed } from '../../shared/components/useRailCollapsed';
 import { UploadModal } from '../../shared/components/UploadModal';
 import { useListingCache } from '../../shared/hooks/useListingCache';
+import { apiUrl } from '../../shared/api';
 import { copyToClipboard, objectAbsoluteKey, objectRelativePath } from '../../shared/format';
 import { requestErrorMessage } from '../../shared/requestError';
 import { getDownloadKey, storageDownloadScriptUrl } from '../../shared/upload/api';
@@ -313,26 +314,42 @@ export function StoragesPage() {
     }
   }
 
+  /**
+   * Opens the object in a new tab. This navigates straight to the redirect
+   * route, so there is no await before the tab opens (a popup blocker would eat
+   * a deferred call) and the signed URL never passes through JS.
+   */
+  function onOpen(key: string) {
+    if (!selectedId) return;
+    const params = new URLSearchParams({ key, disposition: 'inline' });
+    const url = apiUrl(`/storages/${encodeURIComponent(selectedId)}/download-object?${params}`);
+    // A synthetic anchor, not window.open: it always opens a tab, never a
+    // popup window, and `noopener` keeps the redirect target out of `window.opener`.
+    const link = document.createElement('a');
+    link.href = url;
+    link.target = '_blank';
+    link.rel = 'noopener';
+    link.click();
+  }
+
   async function onCopyLink(item: StorageFileItem) {
     if (!selectedId) return;
     if (item.isPublic && item.publicUrl) {
-      const copied = await copyToClipboard(item.publicUrl);
-      notify(
-        copied
-          ? `Public path copied:\n${item.publicUrl}`
-          : `Copy failed. Public path:\n${item.publicUrl}`,
-      );
+      if (await copyToClipboard(item.publicUrl)) {
+        toast('Public path copied');
+        return;
+      }
+      notify(`Copy failed. Public path:\n${item.publicUrl}`);
       return;
     }
     try {
       const { url, expiresInSeconds } = await getDownloadLink(selectedId, item.key);
       const minutes = Math.max(1, Math.round((expiresInSeconds || 900) / 60));
-      const copied = await copyToClipboard(url);
-      notify(
-        copied
-          ? `Direct download link copied. Valid for ~${minutes} min:\n${url}`
-          : `Copy failed. Direct download link (valid ~${minutes} min):\n${url}`,
-      );
+      if (await copyToClipboard(url)) {
+        toast(`Download link copied · valid ~${minutes} min`);
+        return;
+      }
+      notify(`Copy failed. Direct download link (valid ~${minutes} min):\n${url}`);
     } catch {
       notifyError('Failed to create download link');
     }
@@ -344,12 +361,11 @@ export function StoragesPage() {
       const key = await getDownloadKey();
       const endpoint = storageDownloadScriptUrl(selectedId, item.key);
       const cmd = downloadRunCommand(endpoint, key);
-      const copied = await copyToClipboard(cmd);
-      notify(
-        copied
-          ? `Direct download CLI copied.\n${cmd}`
-          : `Copy failed. Select and copy manually:\n${cmd}`,
-      );
+      if (await copyToClipboard(cmd)) {
+        toast('Download CLI command copied');
+        return;
+      }
+      notify(`Copy failed. Select and copy manually:\n${cmd}`);
     } catch {
       notifyError('Failed to create download CLI command');
     }
@@ -614,7 +630,7 @@ export function StoragesPage() {
                   items={items}
                   pending={filesPending}
                   onOpenFolder={(relative) => setPrefix(relative)}
-                  onPreview={(key) => setTextEditor({ key, mode: 'preview' })}
+                  onOpen={(key) => onOpen(key)}
                   onEdit={(key) => setTextEditor({ key, mode: 'edit' })}
                   onDownload={(key) => void onDownload(key)}
                   onCopyLink={(item) => void onCopyLink(item)}

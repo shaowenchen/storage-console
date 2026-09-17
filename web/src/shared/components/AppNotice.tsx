@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -23,20 +24,31 @@ type ConfirmState = {
   message: string;
 };
 
+type ToastVariant = 'success' | 'error';
+
+type Toast = {
+  id: number;
+  message: string;
+  variant: ToastVariant;
+};
+
 type NoticeContextValue = {
   notify: (message: string, title?: string) => void;
   notifyError: (message: string, title?: string) => void;
   confirm: (message: string, title?: string) => Promise<boolean>;
+  toast: (message: string, variant?: ToastVariant) => void;
 };
 
 const NoticeContext = createContext<NoticeContextValue | null>(null);
 
 const ERROR_NOTICE_COOLDOWN_MS = 30000;
+const TOAST_DURATION_MS = 2600;
 const recentErrorNotices = new Map<string, number>();
 
 let externalNotify: NoticeContextValue['notify'] | null = null;
 let externalNotifyError: NoticeContextValue['notifyError'] | null = null;
 let externalConfirm: NoticeContextValue['confirm'] | null = null;
+let externalToast: NoticeContextValue['toast'] | null = null;
 
 function errorNoticeKey(title: string, message: string): string {
   return `${title}\0${message}`;
@@ -71,6 +83,19 @@ export async function confirm(message: string, title = 'Confirm'): Promise<boole
   return window.confirm(message);
 }
 
+/**
+ * Transient confirmation for fire-and-forget actions (copying a link, say).
+ * Unlike `notify` it needs no dismissal, so keep it to messages the user does
+ * not have to read — anything they may need to copy still belongs in a modal.
+ */
+export function toast(message: string, variant: ToastVariant = 'success') {
+  if (externalToast) {
+    externalToast(message, variant);
+    return;
+  }
+  console.warn(`[toast] ${message}`);
+}
+
 export function AppNoticeProvider({ children }: { children: ReactNode }) {
   const [noticeState, setNoticeState] = useState<NoticeState>({
     open: false,
@@ -85,6 +110,38 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
   });
   const confirmResolverRef = useRef<((value: boolean) => void) | null>(null);
   const [codeCopied, setCodeCopied] = useState(false);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastIdRef = useRef(0);
+  const toastTimersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+
+  const dismissToast = useCallback((id: number) => {
+    const timer = toastTimersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      toastTimersRef.current.delete(id);
+    }
+    setToasts((prev) => prev.filter((item) => item.id !== id));
+  }, []);
+
+  const toastFn = useCallback(
+    (message: string, variant: ToastVariant = 'success') => {
+      const id = ++toastIdRef.current;
+      setToasts((prev) => [...prev, { id, message, variant }]);
+      toastTimersRef.current.set(
+        id,
+        setTimeout(() => dismissToast(id), TOAST_DURATION_MS),
+      );
+    },
+    [dismissToast],
+  );
+
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+    };
+  }, []);
 
   const notifyFn = useCallback((message: string, title = 'Notice') => {
     setCodeCopied(false);
@@ -104,13 +161,19 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const value = useMemo(
-    () => ({ notify: notifyFn, notifyError: notifyErrorFn, confirm: confirmFn }),
-    [notifyFn, notifyErrorFn, confirmFn],
+    () => ({
+      notify: notifyFn,
+      notifyError: notifyErrorFn,
+      confirm: confirmFn,
+      toast: toastFn,
+    }),
+    [notifyFn, notifyErrorFn, confirmFn, toastFn],
   );
 
   externalNotify = notifyFn;
   externalNotifyError = notifyErrorFn;
   externalConfirm = confirmFn;
+  externalToast = toastFn;
 
   const noticeParts = splitNoticeMessage(noticeState.message);
   const confirmParts = splitNoticeMessage(confirmState.message);
@@ -224,6 +287,20 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+      {toasts.length ? (
+        <div className="app-toast-stack">
+          {toasts.map((item) => (
+            <div
+              key={item.id}
+              className={`app-toast ${item.variant === 'error' ? 'app-toast-error' : ''}`}
+              role="status"
+              aria-live="polite"
+            >
+              {item.message}
+            </div>
+          ))}
         </div>
       ) : null}
     </NoticeContext.Provider>

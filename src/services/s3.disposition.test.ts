@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentContentDisposition } from './s3.js';
+import { attachmentContentDisposition, inlineContentDisposition } from './s3.js';
 
 describe('attachmentContentDisposition', () => {
   it('uses an unquoted token for plain ASCII names', () => {
@@ -49,5 +49,29 @@ describe('attachmentContentDisposition', () => {
 
   it('falls back to a token when the name is blank', () => {
     expect(attachmentContentDisposition('   ')).toBe('attachment; filename=download');
+  });
+});
+
+describe('inlineContentDisposition', () => {
+  it('differs from attachment only in the disposition type', () => {
+    expect(inlineContentDisposition('col_gpu_log.sh')).toBe('inline; filename=col_gpu_log.sh');
+    expect(inlineContentDisposition('readme.txt')).toBe('inline; filename=readme.txt');
+  });
+
+  it('keeps the same filename escaping rules', () => {
+    expect(inlineContentDisposition('说明.txt')).toBe(
+      `inline; filename*=UTF-8''${encodeURIComponent('说明.txt')}`,
+    );
+    expect(inlineContentDisposition('my report.txt')).toBe(
+      `inline; filename*=UTF-8''${encodeURIComponent('my report.txt')}`,
+    );
+    expect(inlineContentDisposition('   ')).toBe('inline; filename=download');
+  });
+
+  it('never quotes the filename token', () => {
+    const value = inlineContentDisposition('readme.txt');
+    expect(value).not.toContain('"');
+    expect(value).not.toContain('%22');
+    expect(value).not.toMatch(/filename\*/);
   });
 });
