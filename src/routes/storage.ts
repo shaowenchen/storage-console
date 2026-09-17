@@ -93,6 +93,13 @@ const log = createLogger('storage');
 
 const DEFAULT_FILE_LIST_LIMIT = 100;
 const MAX_FILE_LIST_LIMIT = 200;
+/**
+ * Ceiling on a recursive folder download. The client fetches these one at a
+ * time, so an unbounded list would let a single click on a bucket root queue an
+ * unbounded amount of work in the browser. Exceeding it is reported back to the
+ * caller rather than silently truncating.
+ */
+const MAX_FOLDER_DOWNLOAD_OBJECTS = 1000;
 
 interface StorageFilesCursor {
   prefix: string;
@@ -968,6 +975,50 @@ router.get(
       responseContentType,
     });
     res.redirect(url);
+  }),
+);
+
+router.get(
+  '/:id/object-keys',
+  requireAdmin,
+  asyncHandler(async (req, res) => {
+    const bucket = await getBucketById(req.params.id);
+    if (!bucket) {
+      sendApiError(res, 404, 'Storage not found');
+      return;
+    }
+    const key = String(req.query.key || '').trim();
+    if (!key) {
+      sendApiError(res, 400, 'Object key is required');
+      return;
+    }
+
+    const client = getS3Client(bucket);
+    // Same rule as the mutating routes: a trailing `/` or isPrefix means
+    // "everything under this prefix", otherwise just this one key.
+    const { keys, isPrefix } = await resolveMutationKeys(
+      client,
+      bucket,
+      key,
+      req.query.isPrefix ?? req.query.prefix,
+    );
+    const truncated = keys.length > MAX_FOLDER_DOWNLOAD_OBJECTS;
+    const limited = truncated ? keys.slice(0, MAX_FOLDER_DOWNLOAD_OBJECTS) : keys;
+
+    log.info('Listed storage object keys', {
+      ...bucketLogMeta(bucket),
+      requestedBy: req.userKeyAuth!.user,
+      key,
+      isPrefix,
+      objectCount: limited.length,
+      truncated,
+    });
+    res.json({
+      keys: limited,
+      total: limited.length,
+      truncated,
+      maxObjects: MAX_FOLDER_DOWNLOAD_OBJECTS,
+    });
   }),
 );
 

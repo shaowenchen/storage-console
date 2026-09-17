@@ -36,7 +36,9 @@ type NoticeContextValue = {
   notify: (message: string, title?: string) => void;
   notifyError: (message: string, title?: string) => void;
   confirm: (message: string, title?: string) => Promise<boolean>;
-  toast: (message: string, variant?: ToastVariant) => void;
+  /** Returns a handle for `updateToast`, or null when nothing rendered it. */
+  toast: (message: string, variant?: ToastVariant) => number | null;
+  updateToast: (id: number, message: string, variant?: ToastVariant) => void;
 };
 
 const NoticeContext = createContext<NoticeContextValue | null>(null);
@@ -49,6 +51,7 @@ let externalNotify: NoticeContextValue['notify'] | null = null;
 let externalNotifyError: NoticeContextValue['notifyError'] | null = null;
 let externalConfirm: NoticeContextValue['confirm'] | null = null;
 let externalToast: NoticeContextValue['toast'] | null = null;
+let externalUpdateToast: NoticeContextValue['updateToast'] | null = null;
 
 function errorNoticeKey(title: string, message: string): string {
   return `${title}\0${message}`;
@@ -87,13 +90,22 @@ export async function confirm(message: string, title = 'Confirm'): Promise<boole
  * Transient confirmation for fire-and-forget actions (copying a link, say).
  * Unlike `notify` it needs no dismissal, so keep it to messages the user does
  * not have to read — anything they may need to copy still belongs in a modal.
+ *
+ * Returns a handle for `updateToast`, which is how a longer operation reports
+ * progress without stacking a toast per step.
  */
-export function toast(message: string, variant: ToastVariant = 'success') {
+export function toast(message: string, variant: ToastVariant = 'success'): number | null {
   if (externalToast) {
-    externalToast(message, variant);
-    return;
+    return externalToast(message, variant);
   }
   console.warn(`[toast] ${message}`);
+  return null;
+}
+
+/** Replaces the text of a live toast, restarting its dismissal timer. */
+export function updateToast(id: number | null, message: string, variant?: ToastVariant) {
+  if (id === null || !externalUpdateToast) return;
+  externalUpdateToast(id, message, variant);
 }
 
 export function AppNoticeProvider({ children }: { children: ReactNode }) {
@@ -127,6 +139,26 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
     (message: string, variant: ToastVariant = 'success') => {
       const id = ++toastIdRef.current;
       setToasts((prev) => [...prev, { id, message, variant }]);
+      toastTimersRef.current.set(
+        id,
+        setTimeout(() => dismissToast(id), TOAST_DURATION_MS),
+      );
+      return id;
+    },
+    [dismissToast],
+  );
+
+  const updateToastFn = useCallback(
+    (id: number, message: string, variant?: ToastVariant) => {
+      setToasts((prev) =>
+        prev.map((item) =>
+          item.id === id ? { ...item, message, variant: variant ?? item.variant } : item,
+        ),
+      );
+      // Restart the countdown: a progress toast should linger after its last
+      // update, not vanish mid-operation.
+      const existing = toastTimersRef.current.get(id);
+      if (existing) clearTimeout(existing);
       toastTimersRef.current.set(
         id,
         setTimeout(() => dismissToast(id), TOAST_DURATION_MS),
@@ -166,14 +198,16 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
       notifyError: notifyErrorFn,
       confirm: confirmFn,
       toast: toastFn,
+      updateToast: updateToastFn,
     }),
-    [notifyFn, notifyErrorFn, confirmFn, toastFn],
+    [notifyFn, notifyErrorFn, confirmFn, toastFn, updateToastFn],
   );
 
   externalNotify = notifyFn;
   externalNotifyError = notifyErrorFn;
   externalConfirm = confirmFn;
   externalToast = toastFn;
+  externalUpdateToast = updateToastFn;
 
   const noticeParts = splitNoticeMessage(noticeState.message);
   const confirmParts = splitNoticeMessage(confirmState.message);

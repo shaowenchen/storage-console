@@ -1,6 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { confirm, notify, notifyError, toast } from '../../shared/components/AppNotice';
+import {
+  confirm,
+  notify,
+  notifyError,
+  toast,
+  updateToast,
+} from '../../shared/components/AppNotice';
 import { ListRailHeader } from '../../shared/components/ListRailHeader';
 import { ListItemActionMenu } from '../../shared/components/ListItemActionMenu';
 import { MoveObjectModal } from '../../shared/components/MoveObjectModal';
@@ -8,6 +14,7 @@ import { useRailCollapsed } from '../../shared/components/useRailCollapsed';
 import { UploadModal } from '../../shared/components/UploadModal';
 import { useListingCache } from '../../shared/hooks/useListingCache';
 import { apiUrl } from '../../shared/api';
+import { downloadSequentially } from '../../shared/download/sequential';
 import { copyToClipboard, objectAbsoluteKey, objectRelativePath } from '../../shared/format';
 import { requestErrorMessage } from '../../shared/requestError';
 import { getDownloadKey, storageDownloadScriptUrl } from '../../shared/upload/api';
@@ -17,6 +24,7 @@ import {
   deleteStorageObject,
   getDownloadLink,
   getObjectAccess,
+  listObjectKeys,
   listStorageFiles,
   listStorages,
   moveStorageObject,
@@ -311,6 +319,58 @@ export function StoragesPage() {
       window.location.href = url;
     } catch {
       notifyError('Download failed');
+    }
+  }
+
+  /**
+   * Downloads every object under a folder, one at a time. The files land flat
+   * in the browser's download folder — a per-file download cannot create
+   * directories, so nested names collide and the browser renames them.
+   */
+  async function onDownloadFolder(key: string) {
+    if (!selectedId) return;
+    const bucketId = selectedId;
+    let listing;
+    try {
+      listing = await listObjectKeys(bucketId, key, true);
+    } catch (err) {
+      notifyError(requestErrorMessage(err, 'Failed to list folder contents'));
+      return;
+    }
+    if (!listing.keys.length) {
+      toast('Folder is empty', 'error');
+      return;
+    }
+
+    if (listing.truncated) {
+      toast(
+        `Folder has more than ${listing.maxObjects} objects; downloading the first ${listing.maxObjects}`,
+        'error',
+      );
+    }
+
+    const urls = listing.keys.map((objectKey) => {
+      const params = new URLSearchParams({ key: objectKey });
+      return apiUrl(`/storages/${encodeURIComponent(bucketId)}/download-object?${params}`);
+    });
+
+    const started = toast(`Downloading ${urls.length} files…`);
+    const result = await downloadSequentially(urls, {
+      onProgress: (completed, total) => {
+        if (completed === total || completed % 10 === 0) {
+          updateToast(started, `Downloading ${completed}/${total}…`);
+        }
+      },
+    });
+
+    if (result.failed.length) {
+      updateToast(
+        started,
+        `Downloaded ${result.completed}/${urls.length}; ${result.failed.length} failed`,
+        'error',
+      );
+    } else {
+      updateToast(started, `Downloaded ${result.completed} files`);
     }
   }
 
@@ -633,6 +693,7 @@ export function StoragesPage() {
                   onOpen={(key) => onOpen(key)}
                   onEdit={(key) => setTextEditor({ key, mode: 'edit' })}
                   onDownload={(key) => void onDownload(key)}
+                  onDownloadFolder={(key) => void onDownloadFolder(key)}
                   onCopyLink={(item) => void onCopyLink(item)}
                   onCopyDownloadCli={(item) => void onCopyDownloadCli(item)}
                   onMove={(key, isPrefix) => void onMove(key, isPrefix)}

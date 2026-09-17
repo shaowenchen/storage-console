@@ -27,6 +27,8 @@ type Props = {
   onOpen?: () => void;
   onEdit?: () => void;
   onDownload?: () => void;
+  /** Folder action: download every object under the prefix, one at a time. */
+  onDownloadFolder?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
   onMove: () => void;
@@ -52,6 +54,7 @@ export function FileRowActions({
   onOpen,
   onEdit,
   onDownload,
+  onDownloadFolder,
   onCopyLink,
   onCopyDownloadCli,
   onMove,
@@ -160,6 +163,7 @@ export function FileRowActions({
             onOpen={onOpen ? withClose(onOpen) : undefined}
             onEdit={onEdit ? withClose(onEdit) : undefined}
             onDownload={onDownload ? withClose(onDownload) : undefined}
+            onDownloadFolder={onDownloadFolder ? withClose(onDownloadFolder) : undefined}
             onCopyLink={onCopyLink ? withClose(onCopyLink) : undefined}
             onCopyDownloadCli={onCopyDownloadCli ? withClose(onCopyDownloadCli) : undefined}
             onMove={withClose(onMove)}

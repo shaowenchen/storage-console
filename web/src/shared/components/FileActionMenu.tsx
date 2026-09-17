@@ -12,6 +12,8 @@ type Props = {
   onOpen?: () => void;
   onEdit?: () => void;
   onDownload?: () => void;
+  /** Folder action: download every object under the prefix, one at a time. */
+  onDownloadFolder?: () => void;
   onCopyLink?: () => void;
   onCopyDownloadCli?: () => void;
   onMove: () => void;
@@ -31,6 +33,7 @@ export function FileActionMenu({
   onOpen,
   onEdit,
   onDownload,
+  onDownloadFolder,
   onCopyLink,
   onCopyDownloadCli,
   onMove,
@@ -60,6 +63,11 @@ export function FileActionMenu({
       {!isFolder && onDownload ? (
         <button type="button" className="bucket-action" onClick={onDownload}>
           Download(direct)
+        </button>
+      ) : null}
+      {isFolder && onDownloadFolder ? (
+        <button type="button" className="bucket-action" onClick={onDownloadFolder}>
+          Download
         </button>
       ) : null}
       {!isFolder && onCopyDownloadCli ? (

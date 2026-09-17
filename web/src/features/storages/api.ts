@@ -102,6 +102,26 @@ export async function listStorageFiles(
   return parseJson<StorageFilesResponse>(res);
 }
 
+export type ObjectKeysResult = {
+  keys: string[];
+  total: number;
+  /** True when the listing hit the server's folder-download cap. */
+  truncated: boolean;
+  maxObjects: number;
+};
+
+/** Every object key under a folder, for a recursive download. */
+export async function listObjectKeys(
+  bucketId: string,
+  key: string,
+  isPrefix = false,
+): Promise<ObjectKeysResult> {
+  const params = new URLSearchParams({ key });
+  if (isPrefix) params.set('isPrefix', '1');
+  const res = await apiFetch(`/storages/${bucketId}/object-keys?${params}`);
+  return parseJson<ObjectKeysResult>(res);
+}
+
 export async function getObjectAccess(
   bucketId: string,
   key: string,
