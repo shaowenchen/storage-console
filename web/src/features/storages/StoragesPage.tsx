@@ -517,6 +517,15 @@ export function StoragesPage() {
     }
   }
 
+  /** Copies the open folder's full object path, rooted at the bucket path. */
+  async function onCopyPath(path: string) {
+    if (await copyToClipboard(path)) {
+      toast('Path copied');
+      return;
+    }
+    notify(`Copy failed. Path:\n${path}`);
+  }
+
   async function onCopyDownloadCli(item: StorageFileItem) {
     if (!selectedId) return;
     try {
@@ -619,6 +628,7 @@ export function StoragesPage() {
       .filter(Boolean);
     const relativeParts = prefix.split('/').filter(Boolean);
     const displayParts = [...baseParts, ...relativeParts];
+    const currentPath = displayParts.join('/');
 
     const crumbs = displayParts.map((part, index) => {
       const relativeIndex = index - baseParts.length;
@@ -648,6 +658,15 @@ export function StoragesPage() {
             </button>
           </span>
         ))}
+        <button
+          type="button"
+          className="path-copy-btn"
+          title="Copy this folder's path"
+          aria-label="Copy current path"
+          onClick={() => void onCopyPath(currentPath)}
+        >
+          ⧉
+        </button>
         <span className="browser-path-spacer" />
         <button type="button" className="action-btn" onClick={() => setUploadOpen(true)}>
           Upload

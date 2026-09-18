@@ -359,6 +359,23 @@
   font-weight: 600;
 }
 
+.path-copy-btn {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.15rem 0.3rem;
+  margin-left: 0.15rem;
+  font-size: 0.85rem;
+  line-height: 1;
+  border-radius: 0.35rem;
+}
+
+.path-copy-btn:hover {
+  color: var(--text-main);
+  background: var(--bg-soft);
+}
+
 .path-separator {
   color: var(--text-muted);
 }
