@@ -139,46 +139,154 @@
   position: fixed;
   top: 1rem;
   right: 1rem;
+  bottom: 1rem;
   z-index: 1300;
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 0.5rem;
+  justify-content: flex-start;
+  gap: 0.6rem;
   pointer-events: none;
-  max-width: min(24rem, calc(100vw - 2rem));
+  overflow-y: auto;
+  max-width: min(25rem, calc(100vw - 2rem));
 }
 
 .app-toast {
-  padding: 0.6rem 0.85rem;
-  border-radius: 10px;
+  position: relative;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.85rem 0.9rem 0.95rem;
   border: 1px solid var(--border-soft);
-  border-left: 3px solid var(--color-success);
-  background: var(--bg-elevated);
+  border-radius: calc(var(--radius-card) + 3px);
+  background: var(--bg-toast);
   color: var(--text-main);
-  box-shadow: var(--shadow-popover);
-  font-size: 0.85rem;
-  line-height: 1.4;
-  overflow-wrap: anywhere;
-  animation: app-toast-in 0.18s ease-out;
+  box-shadow: var(--shadow-toast);
+  font-size: 0.88rem;
+  line-height: 1.45;
+  overflow: hidden;
+  pointer-events: auto;
+  animation: app-toast-in 0.22s cubic-bezier(0.16, 0.84, 0.44, 1);
 }
 
-.app-toast-error {
-  border-left-color: var(--color-danger);
+.app-toast-message {
+  min-width: 0;
+  padding-top: 0.05rem;
+  overflow-wrap: anywhere;
+}
+
+/* Tinted pill, so the icon reads as a status badge rather than a stray mark. */
+.app-toast-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.app-toast-icon svg {
+  display: block;
+}
+
+.app-toast .app-toast-icon {
+  color: var(--color-success);
+  background: color-mix(in srgb, var(--color-success) 14%, transparent);
+}
+
+.app-toast-error .app-toast-icon {
+  color: var(--color-danger);
+  background: color-mix(in srgb, var(--color-danger) 14%, transparent);
+}
+
+.app-toast-close {
+  flex-shrink: 0;
+  width: 1.5rem;
+  height: 1.5rem;
+  margin: -0.15rem -0.2rem 0 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  opacity: 0;
+  transition:
+    opacity 0.15s ease,
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.app-toast:hover .app-toast-close,
+.app-toast:focus-within .app-toast-close {
+  opacity: 1;
+}
+
+.app-toast-close:hover {
+  background: var(--bg-ghost);
+  color: var(--text-main);
+}
+
+.app-toast-close svg {
+  display: block;
+}
+
+/* Drains over the JS dismissal delay, so the toast never disappears silently. */
+.app-toast-timer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  transform-origin: left center;
+  background: color-mix(in srgb, var(--color-success) 55%, transparent);
+  animation: app-toast-drain var(--app-toast-duration, 2600ms) linear forwards;
+}
+
+.app-toast-error .app-toast-timer {
+  background: color-mix(in srgb, var(--color-danger) 55%, transparent);
 }
 
 @keyframes app-toast-in {
   from {
     opacity: 0;
-    transform: translateX(1rem);
+    transform: translateX(1.5rem) scale(0.97);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) scale(1);
+  }
+}
+
+@keyframes app-toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+/* Touch devices have no hover, so the dismiss button must always be visible. */
+@media (hover: none) {
+  .app-toast-close {
+    opacity: 1;
   }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .app-toast {
+    animation: none;
+  }
+
+  .app-toast-timer {
     animation: none;
   }
 }

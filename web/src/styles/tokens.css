@@ -55,6 +55,8 @@
   --border-empty: #d7dbe7;
   --bg-popover: rgba(255, 255, 255, 0.98);
   --bg-profile-row-border: #eef2f7;
+  --bg-toast: var(--bg-elevated);
+  --shadow-toast: 0 16px 36px rgba(15, 23, 42, 0.16);
 }
 
 [data-theme='dark'] {
@@ -94,6 +96,8 @@
   --border-empty: #475569;
   --bg-popover: rgba(30, 41, 59, 0.98);
   --bg-profile-row-border: #334155;
+  --bg-toast: #1e293b;
+  --shadow-toast: 0 16px 36px rgba(0, 0, 0, 0.45);
 }
 
 *,

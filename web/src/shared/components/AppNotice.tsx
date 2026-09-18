@@ -6,6 +6,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ReactNode,
 } from 'react';
 import { copyToClipboard } from '../format';
@@ -324,7 +325,12 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
         </div>
       ) : null}
       {toasts.length ? (
-        <div className="app-toast-stack">
+        <div
+          className="app-toast-stack"
+          // The CSS timer bar drains over exactly the JS dismissal delay, so the
+          // two cannot drift apart.
+          style={{ '--app-toast-duration': `${TOAST_DURATION_MS}ms` } as CSSProperties}
+        >
           {toasts.map((item) => (
             <div
               key={item.id}
@@ -332,12 +338,66 @@ export function AppNoticeProvider({ children }: { children: ReactNode }) {
               role="status"
               aria-live="polite"
             >
-              {item.message}
+              <span className="app-toast-icon" aria-hidden="true">
+                {item.variant === 'error' ? <ErrorGlyph /> : <SuccessGlyph />}
+              </span>
+              <span className="app-toast-message">{item.message}</span>
+              <button
+                type="button"
+                className="app-toast-close"
+                aria-label="Dismiss"
+                onClick={() => dismissToast(item.id)}
+              >
+                <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+                  <path
+                    d="M4 4l8 8M12 4L4 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.75"
+                    strokeLinecap="round"
+                  />
+                </svg>
+              </button>
+              {/* Keyed on the message so a progress update restarts the drain. */}
+              <span className="app-toast-timer" key={item.message} aria-hidden="true" />
             </div>
           ))}
         </div>
       ) : null}
     </NoticeContext.Provider>
+  );
+}
+
+/** Status glyphs for the toast cards, drawn inline to avoid an icon dependency. */
+function SuccessGlyph() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M5.3 8.2l1.9 1.9 3.5-4"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ErrorGlyph() {
+  return (
+    <svg width="17" height="17" viewBox="0 0 16 16">
+      <circle cx="8" cy="8" r="6.6" fill="none" stroke="currentColor" strokeWidth="1.4" />
+      <path
+        d="M8 4.7v3.9"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+      />
+      <circle cx="8" cy="11.2" r="0.85" fill="currentColor" />
+    </svg>
   );
 }
 
