@@ -11,6 +11,13 @@ type Props = {
   items: StorageFileItem[];
   /** When true and items are empty, render nothing instead of the empty-state panel. */
   pending?: boolean;
+  /**
+   * Narrow viewport: drop the ACL and Modified columns. A phone cannot show
+   * five columns of a dense table without cramping the object name, which is
+   * the column people actually read. ACL stays reachable from the row menu,
+   * and a file can still be opened to inspect it.
+   */
+  compact?: boolean;
   onOpenFolder: (relativePrefix: string) => void;
   onOpen: (key: string) => void;
   onEdit: (key: string) => void;
@@ -30,6 +37,7 @@ export function ObjectFileTable({
   bucketId,
   items,
   pending = false,
+  compact = false,
   onOpenFolder,
   onOpen,
   onEdit,
@@ -65,16 +73,24 @@ export function ObjectFileTable({
       <colgroup>
         <col />
         <col className="col-size" />
-        <col className="col-acl" />
-        <col className="col-date" />
+        {compact ? null : (
+          <>
+            <col className="col-acl" />
+            <col className="col-date" />
+          </>
+        )}
         <col className="col-actions" />
       </colgroup>
       <thead>
         <tr>
           <th>Object</th>
           <th className="table-size">Size</th>
-          <th>ACL</th>
-          <th>Modified</th>
+          {compact ? null : (
+            <>
+              <th>ACL</th>
+              <th>Modified</th>
+            </>
+          )}
           <th className="actions" />
         </tr>
       </thead>
@@ -89,6 +105,13 @@ export function ObjectFileTable({
           const showMeta = Boolean(metaPath) && metaPath !== objectName;
           const isDropTarget = isFolder && dropTargetKey === item.key;
           const menuOpen = openMenuId === menuId;
+          // HTML5 drag needs a mouse: a touch drag scrolls the table, so the
+          // reorder-by-drag affordance is worse than useless there.
+          const draggable = !isFolder && !compact;
+          // One tap opens a file on a phone; a double click is unreachable on
+          // touch and a double tap would fire this twice, opening two tabs.
+          const openFile = () => onOpen(item.key);
+          const tapToOpen = compact && !isFolder;
           return (
             <tr
               key={item.key}
@@ -99,8 +122,9 @@ export function ObjectFileTable({
               ]
                 .filter(Boolean)
                 .join(' ')}
+              onClick={tapToOpen ? openFile : undefined}
               onDragOver={
-                isFolder && onDropMove
+                isFolder && onDropMove && !compact
                   ? (e) => {
                       if (!e.dataTransfer.types.includes(DRAG_OBJECT_KEY)) return;
                       e.preventDefault();
@@ -110,14 +134,14 @@ export function ObjectFileTable({
                   : undefined
               }
               onDragLeave={
-                isFolder && onDropMove
+                isFolder && onDropMove && !compact
                   ? () => {
                       if (dropTargetKey === item.key) setDropTargetKey(null);
                     }
                   : undefined
               }
               onDrop={
-                isFolder && onDropMove
+                isFolder && onDropMove && !compact
                   ? (e) => {
                       e.preventDefault();
                       setDropTargetKey(null);
@@ -127,15 +151,19 @@ export function ObjectFileTable({
                     }
                   : undefined
               }
-              onDoubleClick={isFolder ? undefined : () => onOpen(item.key)}
+              onDoubleClick={tapToOpen ? undefined : isFolder ? undefined : openFile}
             >
               <td
                 className={
-                  isFolder ? 'object-cell clickable' : 'object-cell file-row-draggable'
+                  isFolder
+                    ? 'object-cell clickable'
+                    : draggable
+                      ? 'object-cell file-row-draggable'
+                      : 'object-cell file-row-tappable'
                 }
-                draggable={!isFolder}
+                draggable={draggable}
                 onDragStart={
-                  !isFolder
+                  draggable
                     ? (e) => {
                         e.dataTransfer.setData(DRAG_OBJECT_KEY, item.key);
                         e.dataTransfer.effectAllowed = 'move';
@@ -152,22 +180,31 @@ export function ObjectFileTable({
                     {metaPath}
                   </div>
                 ) : null}
+                {compact && !isFolder ? (
+                  <span className="object-open-cue" aria-hidden="true">
+                    ›
+                  </span>
+                ) : null}
               </td>
               <td className="table-size">{isFolder ? '-' : formatSize(item.size)}</td>
-              <td className="table-acl">
-                {isFolder ? (
-                  '-'
-                ) : !item.aclResolved ? (
-                  <span className="acl-pending">…</span>
-                ) : item.aclSupported === false ? (
-                  <span className="acl-na">—</span>
-                ) : item.isPublic ? (
-                  <span className="acl-public">Public</span>
-                ) : (
-                  <span className="acl-private">Private</span>
-                )}
-              </td>
-              <td className="table-date">{isFolder ? '-' : formatDate(item.createdAt)}</td>
+              {compact ? null : (
+                <td className="table-acl">
+                  {isFolder ? (
+                    '-'
+                  ) : !item.aclResolved ? (
+                    <span className="acl-pending">…</span>
+                  ) : item.aclSupported === false ? (
+                    <span className="acl-na">—</span>
+                  ) : item.isPublic ? (
+                    <span className="acl-public">Public</span>
+                  ) : (
+                    <span className="acl-private">Private</span>
+                  )}
+                </td>
+              )}
+              {compact ? null : (
+                <td className="table-date">{isFolder ? '-' : formatDate(item.createdAt)}</td>
+              )}
               <td
                 className="actions"
                 onClick={(e) => e.stopPropagation()}

@@ -62,3 +62,25 @@
   color: var(--color-danger);
   font-size: 0.88rem;
 }
+
+@media (max-width: 640px) {
+  .auth-screen {
+    padding: 1.25rem;
+    /* Center only while the panel fits; a keyboard or long error scrolls it. */
+    align-items: flex-start;
+  }
+
+  .auth-panel {
+    padding: 1.25rem;
+    margin: auto 0;
+  }
+
+  /* Under 16px iOS zooms the whole page in when a field takes focus. */
+  .auth-panel input {
+    font-size: 1rem;
+  }
+
+  .auth-panel button {
+    min-height: 2.75rem;
+  }
+}

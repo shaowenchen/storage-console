@@ -133,62 +133,70 @@
   padding: var(--rail-collapsed-padding);
 }
 
-.storage-layout.storage-list-collapsed .bucket-list-header {
-  justify-content: center;
-  flex-direction: column;
-  gap: 0.7rem;
-}
+/**
+ * The collapse preference only has a visible effect where the rail is a
+ * standing column. Narrower than this it is a drawer (see the bottom of the
+ * file), and a drawer always shows the full list — collapsing it would strand
+ * the user with icon-only navigation and nothing to expand.
+ */
+@media (min-width: 861px) {
+  .storage-layout.storage-list-collapsed .bucket-list-header {
+    justify-content: center;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
 
-.storage-layout.storage-list-collapsed .bucket-list-title,
-.storage-layout.storage-list-collapsed #bucket-list {
-  display: none !important;
-}
+  .storage-layout.storage-list-collapsed .bucket-list-title,
+  .storage-layout.storage-list-collapsed #bucket-list {
+    display: none !important;
+  }
 
-.storage-layout.storage-list-collapsed .collapsed-list-label {
-  display: grid;
-  width: var(--rail-toggle-size);
-  height: var(--rail-toggle-size);
-  place-items: center;
-  border: 1px solid var(--border-chip);
-  border-radius: var(--rail-toggle-radius);
-  background: var(--bg-input);
-  color: var(--text-muted);
-  font-weight: 800;
-}
+  .storage-layout.storage-list-collapsed .collapsed-list-label {
+    display: grid;
+    width: var(--rail-toggle-size);
+    height: var(--rail-toggle-size);
+    place-items: center;
+    border: 1px solid var(--border-chip);
+    border-radius: var(--rail-toggle-radius);
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-weight: 800;
+  }
 
-.storage-layout.storage-list-collapsed .storage-list-toggle {
-  transform: rotate(180deg);
-}
+  .storage-layout.storage-list-collapsed .storage-list-toggle {
+    transform: rotate(180deg);
+  }
 
-.storage-layout.storage-list-collapsed .rail-menu-btn,
-.storage-layout.storage-list-collapsed .rail-action-menu {
-  display: none !important;
-}
+  .storage-layout.storage-list-collapsed .rail-menu-btn,
+  .storage-layout.storage-list-collapsed .rail-action-menu {
+    display: none !important;
+  }
 
-.storage-layout.storage-list-collapsed .bucket-panel-footer {
-  padding-top: 0.45rem;
-  display: flex;
-  justify-content: center;
-}
+  .storage-layout.storage-list-collapsed .bucket-panel-footer {
+    padding-top: 0.45rem;
+    display: flex;
+    justify-content: center;
+  }
 
-.storage-layout.storage-list-collapsed .bucket-profile-link {
-  width: var(--rail-toggle-size);
-  height: var(--rail-toggle-size);
-  padding: 0;
-  justify-content: center;
-  border: 1px solid var(--border-chip);
-  border-radius: var(--rail-toggle-radius);
-  background: var(--bg-input);
-  color: var(--text-muted);
-  font-weight: 800;
-}
+  .storage-layout.storage-list-collapsed .bucket-profile-link {
+    width: var(--rail-toggle-size);
+    height: var(--rail-toggle-size);
+    padding: 0;
+    justify-content: center;
+    border: 1px solid var(--border-chip);
+    border-radius: var(--rail-toggle-radius);
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-weight: 800;
+  }
 
-.storage-layout.storage-list-collapsed .bucket-profile-label {
-  display: none;
-}
+  .storage-layout.storage-list-collapsed .bucket-profile-label {
+    display: none;
+  }
 
-.storage-layout.storage-list-collapsed .bucket-profile-collapsed {
-  display: inline;
+  .storage-layout.storage-list-collapsed .bucket-profile-collapsed {
+    display: inline;
+  }
 }
 
 .bucket-item {
@@ -767,4 +775,268 @@
   outline: none;
   border-color: var(--primary);
   box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+/* --- compact viewport: one pane, with the storage list as a drawer -------- */
+
+/* Compact-viewport-only controls. Everything here is display:none above the
+   breakpoint; the media query below is what brings each one back. */
+.rail-drawer-btn,
+.rail-drawer-close,
+.path-up-btn {
+  display: none;
+}
+
+@media (max-width: 860px) {
+  /* One column: the file listing owns the viewport, the rail floats over it. */
+  .storage-layout,
+  .storage-layout.storage-list-collapsed {
+    grid-template-columns: minmax(0, 1fr);
+    /* The drawer is positioned against the layout box, not the page. */
+    position: relative;
+  }
+
+  .bucket-panel {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 40;
+    width: min(17rem, 82vw);
+    /* Off-canvas rather than display:none, so it can slide in. */
+    transform: translateX(-102%);
+    transition: transform 0.22s cubic-bezier(0.16, 0.84, 0.44, 1);
+    box-shadow: var(--shadow-popover);
+  }
+
+  .storage-layout.storage-list-drawer-open .bucket-panel {
+    transform: translateX(0);
+  }
+
+  /* The rail is an overlay here, so the collapse toggle means nothing. */
+  .storage-list-toggle {
+    display: none;
+  }
+
+  .rail-drawer-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-end;
+    width: 2rem;
+    height: 2rem;
+    margin-bottom: 0.15rem;
+    padding: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-input);
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+
+  .rail-drawer-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 30;
+    background: var(--bg-modal-overlay);
+  }
+
+  .rail-drawer-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    margin-right: 0.25rem;
+    padding: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-ghost);
+    color: var(--text-main);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+
+  .path-up-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    width: 2.25rem;
+    height: 2.25rem;
+    padding: 0;
+    border: 1px solid var(--border-soft);
+    border-radius: var(--radius-control);
+    background: var(--bg-ghost);
+    color: var(--text-main);
+    cursor: pointer;
+  }
+
+  .browser-path .action-btn {
+    padding: 0.5rem 0.7rem;
+  }
+
+  /* The path is the navigation on a phone; give it its own line and let the
+     actions wrap under it instead of squeezing the crumbs to nothing. */
+  .browser-path {
+    gap: 0.3rem 0.15rem;
+  }
+
+  .file-panel {
+    padding: 0.5rem 0.6rem calc(0.6rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .empty-state-select .action-btn {
+    display: block;
+    margin: 0.6rem auto 0;
+  }
+
+  .storage-modal-body input,
+  .storage-modal-body select {
+    /* Under 16px iOS zooms the whole page in when the field takes focus. */
+    font-size: 1rem;
+    /* A form that spans the viewport still scrolls when the keyboard is up. */
+    max-width: 100%;
+  }
+
+  /* The text modals size themselves in vh, which on a phone is the tallest the
+     viewport ever gets (URL bar hidden) — so a keyboard pushing the visual
+     viewport up leaves the body cut off behind it. */
+  .object-text-modal {
+    max-height: calc(100dvh - 1rem);
+  }
+
+  .object-text-body {
+    /* The modal caps its own height; a fixed body cap would only fight it. */
+    max-height: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .page-heading {
+    font-size: 1.1rem;
+  }
+
+  .file-toolbar-main h3 {
+    font-size: 1rem;
+  }
+
+  .storage-meta-line .meta-endpoint {
+    max-width: 100%;
+  }
+
+  .file-table th,
+  .file-table td {
+    padding: 0.32rem 0.35rem;
+  }
+
+  /* Two columns of chrome plus a name is already a crowd. */
+  .file-table .col-size {
+    width: 4.25rem;
+  }
+
+  .file-table .col-actions {
+    width: 2.5rem;
+  }
+
+  .object-name {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .object-cell {
+    position: relative;
+    padding-right: 1.1rem;
+  }
+
+  .file-row-tappable {
+    cursor: pointer;
+  }
+
+  .object-open-cue {
+    position: absolute;
+    top: 50%;
+    right: 0.3rem;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    line-height: 1;
+  }
+
+  .file-list-footer {
+    margin-top: 0.4rem;
+  }
+
+  .modal,
+  .object-text-modal {
+    width: 100%;
+    max-height: calc(100dvh - 1.5rem);
+    overflow: auto;
+  }
+
+  .modal-overlay {
+    padding: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .modal-actions button {
+    flex: 1;
+    min-height: 2.75rem;
+  }
+
+  .object-text-body {
+    min-height: 10rem;
+  }
+}
+
+/* Coarse pointers have no hover and a fat contact point: the controls the
+   desktop layout keeps small need real thumb-sized targets. */
+@media (pointer: coarse) {
+  .bucket-menu-btn,
+  .file-menu-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+
+  .bucket-item {
+    padding: 0.55rem 0.6rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .bucket-action,
+  .bucket-actions .bucket-action,
+  .file-menu .bucket-action,
+  .rail-action-menu .bucket-action {
+    padding: 0.65rem 0.7rem;
+    font-size: 0.9rem;
+  }
+
+  .path-crumb,
+  .path-copy-btn {
+    padding: 0.45rem 0.4rem;
+  }
+
+  .action-btn {
+    padding: 0.5rem 0.75rem;
+    min-height: 2.5rem;
+  }
+
+  .storage-list-toggle,
+  .rail-menu-btn {
+    width: 2.25rem;
+    height: 2.25rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bucket-panel {
+    transition: none;
+  }
 }

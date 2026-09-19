@@ -301,3 +301,48 @@
   font-size: 0.78rem;
   color: var(--text-muted);
 }
+
+.upload-modal-card {
+  width: min(640px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-card);
+  padding: 1rem 1.1rem;
+}
+
+.upload-modal-card h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+  color: var(--text-strong);
+}
+
+@media (max-width: 640px) {
+  .upload-modal-overlay {
+    padding: 0.75rem;
+    align-items: flex-start;
+  }
+
+  .upload-modal-card {
+    max-height: calc(100dvh - 1.5rem);
+  }
+
+  /* Under 16px iOS zooms the whole page in when a field takes focus. */
+  .upload-control {
+    font-size: 1rem;
+  }
+
+  .upload-modal-actions {
+    flex-wrap: wrap;
+  }
+
+  .upload-modal-actions button {
+    flex: 1;
+    min-height: 2.75rem;
+  }
+
+  .upload-script-code {
+    font-size: 0.75rem;
+  }
+}

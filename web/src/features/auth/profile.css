@@ -3,6 +3,11 @@
   display: flex;
   flex-direction: column;
   gap: 0.65rem;
+  /* .app-main clips its own overflow, so the page scrolls itself — otherwise
+     the sections below the fold are unreachable on a short viewport. */
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
 }
 
 .profile-back-link {
@@ -290,6 +295,15 @@
     align-items: flex-start;
   }
 
+  .profile-summary-actions {
+    width: 100%;
+  }
+
+  .profile-signout {
+    width: 100%;
+    min-height: 2.75rem;
+  }
+
   .profile-row {
     grid-template-columns: 1fr;
     gap: 0.35rem;
@@ -310,7 +324,12 @@
 
   .api-key-action {
     flex: 1;
+    min-height: 2.75rem;
     padding: 0.55rem 0.5rem;
     text-align: center;
+  }
+
+  .profile-section {
+    padding: 0.1rem 0.7rem 0.6rem;
   }
 }

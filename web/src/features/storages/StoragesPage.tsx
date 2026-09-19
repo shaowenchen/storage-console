@@ -13,6 +13,7 @@ import { MoveObjectModal } from '../../shared/components/MoveObjectModal';
 import { useRailCollapsed } from '../../shared/components/useRailCollapsed';
 import { UploadModal } from '../../shared/components/UploadModal';
 import { useListingCache } from '../../shared/hooks/useListingCache';
+import { useMediaQuery } from '../../shared/hooks/useMediaQuery';
 import { apiUrl } from '../../shared/api';
 import { downloadAll } from '../../shared/download/batch';
 import {
@@ -46,16 +47,14 @@ import { ObjectFileTable } from './ObjectFileTable';
 import { ObjectTextModal, type ObjectTextMode } from './ObjectTextModal';
 import { StorageFormModal } from './StorageFormModal';
 import type { Storage, StorageFileItem } from './types';
-import {
-  applyStorageLocation,
-  parseStorageLocation,
-  type StorageLocation,
-} from './urlState';
+import { applyStorageLocation, parseStorageLocation, type StorageLocation } from './urlState';
 import './storages.css';
 
 const STORAGE_LIST_KEY = 'storageConsole.storageListCollapsed';
 const LEGACY_STORAGE_LIST_KEY = 'studio.storageListCollapsed';
 const ACL_HYDRATE_CONCURRENCY = 6;
+/** Must match the breakpoint that collapses the two-pane layout in storages.css. */
+const COMPACT_LAYOUT_QUERY = '(max-width: 860px)';
 
 function listingKey(bucketId: string, prefix: string): string {
   return `storage:${bucketId}:${prefix || ''}`;
@@ -95,6 +94,8 @@ export function StoragesPage() {
   const selectStorage = useCallback(
     (nextId: string | null) => {
       navigateTo({ storageId: nextId, prefix: '' });
+      // The drawer covers the listing it just opened, so drop it.
+      setRailDrawerOpen(false);
     },
     [navigateTo],
   );
@@ -109,6 +110,13 @@ export function StoragesPage() {
   );
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
   const [railMenuOpen, setRailMenuOpen] = useState(false);
+  /**
+   * Below the layout breakpoint the storage list is an overlay drawer rather
+   * than a column, so it has to be opened deliberately. On a wide screen the
+   * column is always there and this flag is inert.
+   */
+  const [railDrawerOpen, setRailDrawerOpen] = useState(false);
+  const compactLayout = useMediaQuery(COMPACT_LAYOUT_QUERY);
   const [modalStorage, setModalStorage] = useState<Storage | null | 'new'>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [moveTarget, setMoveTarget] = useState<{
@@ -116,9 +124,7 @@ export function StoragesPage() {
     isPrefix: boolean;
     initialPath: string;
   } | null>(null);
-  const [textEditor, setTextEditor] = useState<{ key: string; mode: ObjectTextMode } | null>(
-    null,
-  );
+  const [textEditor, setTextEditor] = useState<{ key: string; mode: ObjectTextMode } | null>(null);
 
   const listingCache = useListingCache<{
     items: StorageFileItem[];
@@ -637,8 +643,29 @@ export function StoragesPage() {
       return { label: part, prefix: targetPrefix, isLast: index === displayParts.length - 1 };
     });
 
+    const parentPrefix = relativeParts.slice(0, -1).join('/');
+
     return (
       <div className="browser-path">
+        <button
+          type="button"
+          className="rail-drawer-btn"
+          aria-label="Show storages"
+          aria-expanded={railDrawerOpen}
+          onClick={() => setRailDrawerOpen(true)}
+        >
+          ☰
+        </button>
+        {relativeParts.length ? (
+          <button
+            type="button"
+            className="path-up-btn"
+            aria-label="Go up one folder"
+            onClick={() => setPrefix(parentPrefix)}
+          >
+            ↑
+          </button>
+        ) : null}
         <button
           type="button"
           className={`path-crumb ${displayParts.length ? '' : 'current'}`}
@@ -680,8 +707,31 @@ export function StoragesPage() {
 
   return (
     <div className="page-storages">
-      <div className={`storage-layout ${collapsed ? 'storage-list-collapsed' : ''}`}>
+      <div
+        className={[
+          'storage-layout',
+          collapsed ? 'storage-list-collapsed' : '',
+          railDrawerOpen ? 'storage-list-drawer-open' : '',
+        ]
+          .filter(Boolean)
+          .join(' ')}
+      >
+        {railDrawerOpen ? (
+          <div
+            className="rail-drawer-scrim"
+            role="presentation"
+            onClick={() => setRailDrawerOpen(false)}
+          />
+        ) : null}
         <div className="bucket-panel">
+          <button
+            type="button"
+            className="rail-drawer-close"
+            aria-label="Hide storages"
+            onClick={() => setRailDrawerOpen(false)}
+          >
+            ✕
+          </button>
           <ListRailHeader
             title="Storages"
             collapsedLabel="▤"
@@ -777,10 +827,18 @@ export function StoragesPage() {
 
         <div className="file-panel">
           {!selectedStorage ? (
-            <div className="empty-state">
+            <div className="empty-state empty-state-select">
               <div>
                 <strong>Select a storage</strong>
                 <span>Choose a storage to browse objects.</span>
+                {/* On a phone the rail is a drawer with no visible handle here. */}
+                <button
+                  type="button"
+                  className="action-btn"
+                  onClick={() => setRailDrawerOpen(true)}
+                >
+                  Open storages
+                </button>
               </div>
             </div>
           ) : (
@@ -809,6 +867,7 @@ export function StoragesPage() {
                   bucketId={selectedId!}
                   items={items}
                   pending={filesPending}
+                  compact={compactLayout}
                   onOpenFolder={(relative) => setPrefix(relative)}
                   onOpen={(key) => onOpen(key)}
                   onEdit={(key) => setTextEditor({ key, mode: 'edit' })}
